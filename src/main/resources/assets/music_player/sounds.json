@@ -1,0 +1,119 @@
+{
+  "bgm_default": {
+    "subtitle": "subtitles.music_player.bgm_default",
+    "sounds": [
+      {
+        "name": "music_player:music/bgm_default",
+        "stream": true
+      }
+    ]
+  },
+  "bgm_plains": {
+    "subtitle": "subtitles.music_player.bgm_plains",
+    "sounds": [
+      {
+        "name": "music_player:music/bgm_plains",
+        "stream": true
+      }
+    ]
+  },
+  "bgm_forest": {
+    "subtitle": "subtitles.music_player.bgm_forest",
+    "sounds": [
+      {
+        "name": "music_player:music/bgm_forest",
+        "stream": true
+      }
+    ]
+  },
+  "bgm_desert": {
+    "subtitle": "subtitles.music_player.bgm_desert",
+    "sounds": [
+      {
+        "name": "music_player:music/bgm_desert",
+        "stream": true
+      }
+    ]
+  },
+  "bgm_ocean": {
+    "subtitle": "subtitles.music_player.bgm_ocean",
+    "sounds": [
+      {
+        "name": "music_player:music/bgm_ocean",
+        "stream": true
+      }
+    ]
+  },
+  "bgm_high_altitude": {
+    "subtitle": "subtitles.music_player.bgm_high_altitude",
+    "sounds": [
+      {
+        "name": "music_player:music/bgm_high_altitude",
+        "stream": true
+      }
+    ]
+  },
+  "bgm_low_altitude": {
+    "subtitle": "subtitles.music_player.bgm_low_altitude",
+    "sounds": [
+      {
+        "name": "music_player:music/bgm_low_altitude",
+        "stream": true
+      }
+    ]
+  },
+  "bgm_crafting": {
+    "subtitle": "subtitles.music_player.bgm_crafting",
+    "sounds": [
+      {
+        "name": "music_player:music/bgm_crafting",
+        "stream": true
+      }
+    ]
+  },
+  "bgm_village": {
+    "subtitle": "subtitles.music_player.bgm_village",
+    "sounds": [
+      {
+        "name": "music_player:music/bgm_village",
+        "stream": true
+      }
+    ]
+  },
+  "bgm_combat": {
+    "subtitle": "subtitles.music_player.bgm_combat",
+    "sounds": [{"name": "music_player:music/bgm_combat", "stream": true}]
+  },
+  "bgm_village_default": {
+    "subtitle": "subtitles.music_player.bgm_village_default",
+    "sounds": [ {"name": "music_player:music/bgm_village_default", "stream": true} ]
+  },
+  "bgm_village_plains": {
+    "subtitle": "subtitles.music_player.bgm_village_plains",
+    "sounds": [ {"name": "music_player:music/bgm_village_plains", "stream": true} ]
+  },
+  "bgm_village_desert": {
+    "subtitle": "subtitles.music_player.bgm_village_desert",
+    "sounds": [ {"name": "music_player:music/bgm_village_desert", "stream": true} ]
+  },
+  "bgm_village_savanna": {
+    "subtitle": "subtitles.music_player.bgm_village_savanna",
+    "sounds": [ {"name": "music_player:music/bgm_village_savanna", "stream": true} ]
+  },
+  "bgm_village_snowy": {
+    "subtitle": "subtitles.music_player.bgm_village_snowy",
+    "sounds": [ {"name": "music_player:music/bgm_village_snowy", "stream": true} ]
+  },
+  "bgm_village_taiga": {
+    "subtitle": "subtitles.music_player.bgm_village_taiga",
+    "sounds": [ {"name": "music_player:music/bgm_village_taiga", "stream": true} ]
+  },
+  "bgm_night": {
+    "subtitle": "subtitles.music_player.bgm_night",
+    "sounds": [ {"name": "music_player:music/bgm_night", "stream": true} ]
+  },
+  "bgm_village_night": {
+    "subtitle": "subtitles.music_player.bgm_village_night",
+    "sounds": [ {"name": "music_player:music/bgm_village_night", "stream": true} ]
+  }
+}
