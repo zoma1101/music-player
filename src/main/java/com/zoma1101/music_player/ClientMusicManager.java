@@ -276,12 +276,6 @@ public class ClientMusicManager { // クラス名を変更
                 bestMatch = definition;
             }
         }
-
-        if(bestMatch != null) {
-            LOGGER.debug("Best match found: Prio={}, ID={}, Event={}", highestPriority, bestMatch.soundPackId, bestMatch.soundEventLocation);
-        } else {
-            LOGGER.trace("No matching SoundPack definition found.");
-        }
         return bestMatch;
     }
 
