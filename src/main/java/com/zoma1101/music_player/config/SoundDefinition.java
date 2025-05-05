@@ -32,7 +32,16 @@ public class SoundDefinition {
     public Integer maxY = null; // オプション: nullなら上限なし
 
     @SerializedName("gui_screen")
-    public String guiScreen = null; // オプション: nullならGUIを問わない (例: "minecraft:crafting_screen")
+    public String guiScreen = null;
+
+    @SerializedName("weather")
+    public List<String> weather = null;
+
+    @SerializedName("dimensions")
+    public List<String> dimensions = null;
+
+    @SerializedName("time")
+    public Boolean time = null; // オプション: nullなら昼夜問わない
 
     // --- 計算用フィールド (読み込み後設定) ---
     public transient String soundPackId = null; // どのSoundPackに属するか
