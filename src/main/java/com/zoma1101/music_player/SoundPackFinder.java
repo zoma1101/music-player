@@ -91,11 +91,7 @@ public class SoundPackFinder implements RepositorySource {
                         continue; // メタデータが読めなければスキップ
                     }
 
-                    // パックフォーマットの互換性を確認 (Pack.Info から取得)
-                    PackCompatibility compatibility = metadata.compatibility(packType); // 1.20.1 Pack.Info にあるはず
-                    boolean isCompatible = compatibility.isCompatible();      // 1.20.1 PackCompatibility にあるはず
-                    boolean shouldWarn = !isCompatible;
-
+                    metadata.compatibility(packType);
                     // Pack インスタンスの生成 (Forge 1.20.1 形式)
                     pack = Pack.create(
                             generatedPackId,
@@ -129,9 +125,4 @@ public class SoundPackFinder implements RepositorySource {
         }
     } // end loadPacks method
 
-
-    private static Component sourceComponent() {
-        return Component.translatable("pack.source.mod", Music_Player.MOD_ID) // MODID を使用
-                .withStyle(ChatFormatting.YELLOW); // スタイル（色など）を適用
-    }
 }

@@ -40,9 +40,6 @@ public class SoundDefinition {
     @SerializedName("dimensions")
     public List<String> dimensions = null;
 
-    @SerializedName("time")
-    public Boolean time = null; // オプション: nullなら昼夜問わない
-
     // --- 計算用フィールド (読み込み後設定) ---
     public transient String soundPackId = null; // どのSoundPackに属するか
     public transient ResourceLocation soundEventLocation = null; // 対応するSoundEventのID

@@ -2,7 +2,6 @@ package com.zoma1101.music_player; // パッケージは合わせてください
 
 import com.zoma1101.music_player.config.SoundDefinition;
 import com.zoma1101.music_player.config.SoundPackLoader; // クラス名が異なる場合は修正
-import com.zoma1101.music_player.regi.SoundEventRegi;
 import com.mojang.logging.LogUtils;
 import net.minecraft.ResourceLocationException;
 import net.minecraft.client.Minecraft;
@@ -68,7 +67,6 @@ public class ClientMusicManager { // クラス名を変更
     public static void initialize() {
         LOGGER.info("Initializing ClientMusicManager for {}", Music_Player.MOD_ID);
         try {
-            defaultMusicSoundEvent = SoundEventRegi.BGM_DEFAULT.get();
             LOGGER.info("Default music event cached: {}", defaultMusicSoundEvent.getLocation());
         } catch (Exception e) {
             LOGGER.error("Failed to get default music sound event!", e);
@@ -162,7 +160,7 @@ public class ClientMusicManager { // クラス名を変更
 
         // 3. 再生すべきターゲットの ResourceLocation を決定
         ResourceLocation targetLocation = null;
-        String reason = "Default";
+        String reason;
         if (bestMatch != null && bestMatch.soundEventLocation != null) {
             targetLocation = bestMatch.soundEventLocation;
             reason = "SoundPack: " + bestMatch.soundPackId + "/" + bestMatch.musicPath + " (Prio:" + bestMatch.priority + ")";

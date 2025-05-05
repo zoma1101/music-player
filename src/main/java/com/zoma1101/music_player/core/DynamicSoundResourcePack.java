@@ -10,6 +10,7 @@ import net.minecraft.server.packs.AbstractPackResources;
 import net.minecraft.server.packs.PackType;
 import net.minecraft.server.packs.metadata.MetadataSectionSerializer;
 import net.minecraft.server.packs.resources.IoSupplier;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 
 import javax.annotation.Nullable;
@@ -30,8 +31,6 @@ public class DynamicSoundResourcePack extends AbstractPackResources {
     private static final Logger LOGGER = LogUtils.getLogger();
 
     private final String packId; // このリソースパック(SoundPack)のユニークID (例: "mysoundpack1")
-    private final Path soundPackBasePath; // 元のSoundPackフォルダへの絶対パス
-    private final Path assetsBasePath; // assets/music_player へのパス
 
     private final Map<ResourceLocation, Path> soundEventToOggPathMap;
 
@@ -47,18 +46,19 @@ public class DynamicSoundResourcePack extends AbstractPackResources {
         super(packId, false);
 
         this.packId = packId;
-        this.soundPackBasePath = soundPackBasePath; // 例: .../soundpacks/test
-        this.assetsBasePath = soundPackBasePath.resolve("assets").resolve(this.packId);
-        this.soundEventToOggPathMap = Collections.unmodifiableMap(new HashMap<>(soundsForThisPack));
+        // 元のSoundPackフォルダへの絶対パス
+        // assets/music_player へのパス
+        Path assetsBasePath = soundPackBasePath.resolve("assets").resolve(this.packId);
+        this.soundEventToOggPathMap = Map.copyOf(soundsForThisPack);
         // ★ ログも更新して新しいパスを表示
         LOGGER.info("Initialized DynamicSoundResourcePack for ID: {} (Provides {} sounds), Assets Base: {}",
-                this.packId, this.soundEventToOggPathMap.size(), this.assetsBasePath);
+                this.packId, this.soundEventToOggPathMap.size(), assetsBasePath);
     }
     // --- リソース取得のコアメソッド (ResourceLocationベース) ---
 
     @Nullable
     @Override
-    public IoSupplier<InputStream> getResource(PackType packType, ResourceLocation location) {
+    public IoSupplier<InputStream> getResource(@NotNull PackType packType, @NotNull ResourceLocation location) {
         if (packType != PackType.CLIENT_RESOURCES) return null;
         String namespace = location.getNamespace();
         String path = location.getPath(); // 例: "sound/music/alpha_forest_day.ogg"
@@ -98,7 +98,7 @@ public class DynamicSoundResourcePack extends AbstractPackResources {
 
     @Nullable
     @Override
-    public IoSupplier<InputStream> getRootResource(String... pathParts) {
+    public IoSupplier<InputStream> getRootResource(String @NotNull ... pathParts) {
         String joinedPath = String.join("/", pathParts);
         // LOGGER.trace("getRootResource Request in pack [{}]: {}", this.packId, joinedPath); // デバッグ用
 
@@ -114,7 +114,7 @@ public class DynamicSoundResourcePack extends AbstractPackResources {
 
 
     @Override
-    public void listResources(PackType packType, String namespace, String pathPrefix, ResourceOutput resourceOutput) {
+    public void listResources(@NotNull PackType packType, @NotNull String namespace, @NotNull String pathPrefix, @NotNull ResourceOutput resourceOutput) {
         if (packType != PackType.CLIENT_RESOURCES) return;
 
         LOGGER.info("[{}] listResources: Handling request. ns='{}', pathPrefix='{}'", this.packId, namespace, pathPrefix);
@@ -238,13 +238,13 @@ public class DynamicSoundResourcePack extends AbstractPackResources {
     }
 
     @Override
-    public String packId() {
+    public @NotNull String packId() {
         // パックIDを返す (Forge/MCバージョンにより getName() の場合あり)
         return this.packId;
     }
 
     @Override
-    public Set<String> getNamespaces(PackType type) {
+    public @NotNull Set<String> getNamespaces(@NotNull PackType type) {
         if (type == PackType.CLIENT_RESOURCES) {
             // ★修正: 自身のIDと、共通サウンドイベント名前空間の両方を提供するようにする
             return Set.of(this.packId, Music_Player.MOD_ID + "_soundpacks");
@@ -382,7 +382,7 @@ public class DynamicSoundResourcePack extends AbstractPackResources {
         // 例: "music_player_soundpacks:test/music/alpha_day"
         String eventPathKey = this.packId + "/" + pathWithoutOgg; // "test/music/alpha_day"
         String eventNsKey = Music_Player.MOD_ID + "_soundpacks";
-        ResourceLocation mapKeyLocation = null;
+        ResourceLocation mapKeyLocation;
         try {
             mapKeyLocation = fromNamespaceAndPath(eventNsKey, eventPathKey);
         } catch (ResourceLocationException e) {
