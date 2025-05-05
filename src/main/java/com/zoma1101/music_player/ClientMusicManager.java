@@ -6,7 +6,7 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.ResourceLocationException;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.gui.screens.inventory.CraftingScreen;
+import net.minecraft.client.gui.screens.inventory.*;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.client.resources.sounds.SoundInstance;
@@ -371,6 +371,14 @@ public class ClientMusicManager { // クラス名を変更
                 if (requiredGui.equals(currentGuiClassName)) guiMatch = true;
                 else if (requiredGui.equalsIgnoreCase(currentGuiSimpleName)) guiMatch = true;
                 else if (requiredGui.equalsIgnoreCase("crafting") && context.currentGui instanceof CraftingScreen) guiMatch = true;
+                else if (requiredGui.equalsIgnoreCase("brewing_stand") && context.currentGui instanceof BrewingStandScreen) guiMatch = true;
+                else if (requiredGui.equalsIgnoreCase("shulker_box") && context.currentGui instanceof ShulkerBoxScreen) guiMatch = true;
+                else if (requiredGui.equalsIgnoreCase("furnace") && context.currentGui instanceof FurnaceScreen) guiMatch = true;
+                else if (requiredGui.equalsIgnoreCase("anvil") && context.currentGui instanceof AnvilScreen) guiMatch = true;
+                else if (requiredGui.equalsIgnoreCase("enchantment") && context.currentGui instanceof EnchantmentScreen) guiMatch = true;
+                else if (requiredGui.equalsIgnoreCase("cartographytable") && context.currentGui instanceof CartographyTableScreen) guiMatch = true;
+                else if (requiredGui.equalsIgnoreCase("smithing") && context.currentGui instanceof SmithingScreen) guiMatch = true;
+                else if (requiredGui.equalsIgnoreCase("merchant") && context.currentGui instanceof MerchantScreen) guiMatch = true;
                 else if ((requiredGui.equalsIgnoreCase("null") || requiredGui.equalsIgnoreCase("none")) && context.currentGui == null) guiMatch = true;
 
                 if (!guiMatch) {
