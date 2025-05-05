@@ -1,7 +1,9 @@
 # music player
 
 状況に応じて切り替わるBGMを自由に設定できます。
-使用方法は.minecraft内のsoundpacks内に以下のように設定すればＢＧＭを設定できます。
+使用方法は.minecraft内のsoundpacks内に以下のように設定すればＢＧＭを設定後、
+pack_idと同じ名前のリソースパックを適用することでBGMが流れます。
+
 
 条件ファイル
 soundpack/pack_id/assets/music_player/conditions/predicate.json
