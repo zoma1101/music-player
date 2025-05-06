@@ -67,7 +67,7 @@ public class ClientMusicManager { // クラス名を変更
     public static void initialize() {
         LOGGER.info("Initializing ClientMusicManager for {}", Music_Player.MOD_ID);
         try {
-            LOGGER.info("Default music event cached: {}", defaultMusicSoundEvent.getLocation());
+            LOGGER.info("Default music event cached: {}", Objects.requireNonNull(defaultMusicSoundEvent).getLocation());
         } catch (Exception e) {
             LOGGER.error("Failed to get default music sound event!", e);
             defaultMusicSoundEvent = null;
@@ -110,24 +110,20 @@ public class ClientMusicManager { // クラス名を変更
 
     @SubscribeEvent
     public static void onPlaySound(PlaySoundEvent event) {
-        SoundInstance sound = event.getSound();
-        if (sound == null) return;
-
-        SoundManager soundManager = Minecraft.getInstance().getSoundManager();
-        boolean isOurMusicPlaying = currentMusicInstance != null && soundManager.isActive(currentMusicInstance);
-
-        if (isOurMusicPlaying) {
-            boolean isVanillaMusic = SoundSource.MUSIC.equals(sound.getSource()) &&
-                    "minecraft".equals(sound.getLocation().getNamespace()) &&
-                    sound.getLocation().getPath().startsWith("music.");
-            if (isVanillaMusic) {
-                LOGGER.debug("Stopping vanilla music: {}", sound.getLocation());
-                event.setSound(null); // バニラ音楽イベントをキャンセル
+        SoundInstance soundBeingPlayed = event.getSound(); // イベントで再生されようとしているサウンド
+        if (soundBeingPlayed == null) return;
+        if (currentMusicLocation != null) {
+            boolean isVanillaBackgroundMusic = SoundSource.MUSIC.equals(soundBeingPlayed.getSource()) &&
+                    "minecraft".equals(soundBeingPlayed.getLocation().getNamespace()) &&
+                    soundBeingPlayed.getLocation().getPath().startsWith("music.");
+            if (isVanillaBackgroundMusic) {
+                if (!soundBeingPlayed.getLocation().equals(currentMusicLocation)) {
+                    event.setSound(null); // バニラのBGM再生イベントをキャンセル
+                }
             }
         }
     }
 
-    // --- コアロジック ---
 
     /**
      * 現在の状況に基づいて再生すべき音楽を判断し、必要であれば再生・停止を行う
