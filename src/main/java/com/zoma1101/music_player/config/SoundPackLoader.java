@@ -62,14 +62,7 @@ public class SoundPackLoader {
         LOGGER.info("Loading SoundPack: {} (ID: {})", packDir.getFileName(), packId);
         discoveredPackIds.add(packId);
 
-        // --- Path Definitions ---
-        // ★ 修正 1: OGGファイルを探す正しいベースパス (assets/<packId>) ★
-        // 例: .../soundpacks/test/assets/test/
         Path musicBaseDir = packDir.resolve("assets").resolve(packId);
-
-        // conditions JSON ファイルへのパス (ユーザーのコードに合わせて assets/music_player/ を維持)
-        // 例: .../soundpacks/test/assets/music_player/conditions/
-        // Music_Player.MOD_ID を使うのがより安全
         Path conditionsDir = packDir.resolve("assets").resolve(MOD_ID).resolve("conditions");
 
 

@@ -37,6 +37,8 @@ import org.slf4j.Logger;
 import javax.annotation.Nullable;
 import java.util.*;
 
+import static com.zoma1101.music_player.config.ClientConfig.isOverride_BGM;
+
 @Mod.EventBusSubscriber(modid = Music_Player.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE, value = Dist.CLIENT)
 public class ClientMusicManager { // クラス名を変更
 
@@ -111,14 +113,33 @@ public class ClientMusicManager { // クラス名を変更
     @SubscribeEvent
     public static void onPlaySound(PlaySoundEvent event) {
         SoundInstance soundBeingPlayed = event.getSound(); // イベントで再生されようとしているサウンド
-        if (soundBeingPlayed == null) return;
-        if (currentMusicLocation != null) {
-            boolean isVanillaBackgroundMusic = SoundSource.MUSIC.equals(soundBeingPlayed.getSource()) &&
-                    "minecraft".equals(soundBeingPlayed.getLocation().getNamespace()) &&
-                    soundBeingPlayed.getLocation().getPath().startsWith("music.");
-            if (isVanillaBackgroundMusic) {
-                if (!soundBeingPlayed.getLocation().equals(currentMusicLocation)) {
-                    event.setSound(null); // バニラのBGM再生イベントをキャンセル
+        if (soundBeingPlayed == null) {
+            return;
+        }
+        ResourceLocation playingLocation = soundBeingPlayed.getLocation();
+        SoundSource soundSource = soundBeingPlayed.getSource();
+        if (SoundSource.MUSIC.equals(soundSource)) {
+            String namespace = playingLocation.getNamespace();
+
+            // バニラのBGMかチェック
+            boolean isVanillaBackgroundMusic = "minecraft".equals(namespace) && playingLocation.getPath().startsWith("music.");
+            // Mod自身のカスタムBGMかチェック
+            boolean isOurCustomMusic = "music_player_soundpacks".equals(namespace);
+            if (currentMusicLocation != null) {
+                // 1. 再生されようとしているのがバニラのBGMのとき
+                if (isVanillaBackgroundMusic) {
+                    if (!playingLocation.equals(currentMusicLocation)) {
+                        event.setSound(null); // バニラのBGM再生イベントをキャンセル
+                    }
+                }
+                else if (!isOurCustomMusic) {
+                    if (isOverride_BGM.get()) {
+                        LOGGER.info("Detected background music from another mod: {}. Our mod is configured to override, stopping our music.", playingLocation);
+                        stopMusic(true);
+                    }
+                    else {
+                        event.setSound(null);
+                    }
                 }
             }
         }
@@ -212,7 +233,6 @@ public class ClientMusicManager { // クラス名を変更
      */
     private static void playMusic(ResourceLocation location) {
         if (isStopping) {
-            LOGGER.debug("Skipping playMusic for [{}] because stopping is in progress.", location);
             return; // 停止処理中なら再生しない
         }
         if (location == null) {
@@ -220,7 +240,6 @@ public class ClientMusicManager { // クラス名を変更
             return;
         }
 
-        LOGGER.info("Attempting to play music: {}", location);
         try {
             // ResourceLocation から直接 SimpleSoundInstance を作成
             currentMusicInstance = new SimpleSoundInstance(
@@ -230,13 +249,10 @@ public class ClientMusicManager { // クラス名を変更
                     0.0D, 0.0D, 0.0D, true
             );
             Minecraft.getInstance().getSoundManager().play(currentMusicInstance);
-            // play() が成功したかどうかはすぐにはわからないが、呼び出しは行った
-            LOGGER.info("SoundManager.play() called for: {}", location);
 
         } catch (Exception e) {
             LOGGER.error("Exception occurred trying to play music [{}]: {}", location, e.getMessage(), e);
             currentMusicInstance = null; // エラー時はインスタンスをクリア
-            // currentMusicLocation は updateMusic で管理されるのでここでは変更しない
         }
     }
 
@@ -254,8 +270,6 @@ public class ClientMusicManager { // クラス名を変更
             isStopping = true;
         }
     }
-
-    // --- 条件判定ヘルパー (変更は最小限) ---
 
     @Nullable
     private static SoundDefinition findBestMatch(List<SoundDefinition> definitions, CurrentContext context) {
