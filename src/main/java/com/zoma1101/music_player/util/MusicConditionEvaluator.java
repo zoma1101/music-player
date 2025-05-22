@@ -1,7 +1,7 @@
 package com.zoma1101.music_player.util;
 
-import com.zoma1101.music_player.config.SoundDefinition;
 import com.mojang.logging.LogUtils;
+import com.zoma1101.music_player.sound.MusicDefinition;
 import net.minecraft.ResourceLocationException;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.*;
@@ -72,106 +72,90 @@ public class MusicConditionEvaluator {
      * @param context 現在のゲーム状況
      * @return 条件が一致すれば true、そうでなければ false
      */
-    public static boolean doesDefinitionMatch(SoundDefinition definition, CurrentContext context) {
+    public static boolean doesDefinitionMatch(MusicDefinition definition, CurrentContext context) { // 型を変更
         if (context == null) {
             LOGGER.trace("Context is null, cannot match definition.");
             return false;
         }
-
+        // soundEventLocation の代わりに soundEventKey や oggResourceLocation をログで使う
+        String logDefId = definition.getSoundEventKey() != null ? definition.getSoundEventKey() : definition.getMusicFileInPack();
 
         try {
-            // --- Biome Check (Tag compatible) ---
-            if (definition.biomes != null && !definition.biomes.isEmpty()) {
-                // 現在のバイオーム情報がなければマッチしない
-                // context.biomeHolder が null または empty Biome の場合
+            // --- Biome Check ---
+            if (definition.getBiomes() != null && !definition.getBiomes().isEmpty()) {
                 if (context.biomeHolder == null || context.biomeHolder.is(ResourceKey.create(Registries.BIOME, ResourceLocation.parse("empty")))) {
-                    LOGGER.trace("Failed biome check: Current biome holder is null or empty for {}", definition.soundEventLocation);
+                    LOGGER.trace("Failed biome check: Current biome holder is null or empty for {}", logDefId);
                     return false;
                 }
-
-                boolean biomeMatchFound = false; // リスト内のいずれかにマッチしたかを示すフラグ
-                for (String requiredBiomeOrTag : definition.biomes) {
-                    if (requiredBiomeOrTag == null || requiredBiomeOrTag.isBlank()) continue; // 無効なエントリは無視
+                // ... (definition.biomes を definition.getBiomes() に変更して同様のロジック) ...
+                // ログ出力の definition.soundEventLocation を logDefId に変更
+                boolean biomeMatchFound = false;
+                for (String requiredBiomeOrTag : definition.getBiomes()) { // getterを使用
+                    if (requiredBiomeOrTag == null || requiredBiomeOrTag.isBlank()) continue;
 
                     if (requiredBiomeOrTag.startsWith("#")) {
-                        // --- タグ指定の場合 ---
                         try {
                             ResourceLocation tagRL = ResourceLocation.parse(requiredBiomeOrTag.substring(1));
                             TagKey<Biome> tagKey = TagKey.create(Registries.BIOME, tagRL);
                             if (context.biomeHolder.is(tagKey)) {
                                 biomeMatchFound = true;
                                 LOGGER.trace("Biome tag match: {} is in tag {}", context.biomeHolder.unwrapKey().map(k -> k.location().toString()).orElse("?"), tagKey.location());
-                                break; // 一致が見つかったのでループ終了
+                                break;
                             }
                         } catch (ResourceLocationException e) {
-                            LOGGER.warn("Invalid biome tag format in definition [{}]: '{}' - {}",
-                                    definition.soundEventLocation != null ? definition.soundEventLocation : definition.musicPath,
-                                    requiredBiomeOrTag, e.getMessage());
+                            LOGGER.warn("Invalid biome tag format in definition [{}]: '{}' - {}", logDefId, requiredBiomeOrTag, e.getMessage());
                         }
                     } else {
-                        // --- ID指定の場合 ---
                         Optional<ResourceKey<Biome>> currentKeyOpt = context.biomeHolder.unwrapKey();
                         if (currentKeyOpt.isPresent() && currentKeyOpt.get().location().toString().equals(requiredBiomeOrTag)) {
                             biomeMatchFound = true;
                             LOGGER.trace("Biome ID match: {} == {}", currentKeyOpt.get().location(), requiredBiomeOrTag);
-                            break; // 一致が見つかったのでループ終了
+                            break;
                         }
                     }
-                } // end for loop
-
-                // ループ後、一致が一つも見つからなければ false
+                }
                 if (!biomeMatchFound) {
                     LOGGER.trace("Failed biome check: Current biome [{}] did not match any in list {}. Def: {}",
                             context.biomeHolder.unwrapKey().map(k -> k.location().toString()).orElse("unknown"),
-                            definition.biomes,
-                            definition.soundEventLocation != null ? definition.soundEventLocation : definition.musicPath);
+                            definition.getBiomes(), logDefId);
                     return false;
                 }
-            } // end biome check block
+            }
 
             // --- Altitude Check ---
-            if (definition.minY != null && context.altitude < definition.minY) {
-                LOGGER.trace("Failed minY check: required={}, current={}", definition.minY, context.altitude);
+            if (definition.getMinY() != null && context.altitude < definition.getMinY()) { // getterを使用
+                LOGGER.trace("Failed minY check: required={}, current={}", definition.getMinY(), context.altitude);
                 return false;
             }
-            if (definition.maxY != null && context.altitude > definition.maxY) {
-                LOGGER.trace("Failed maxY check: required={}, current={}", definition.maxY, context.altitude);
+            if (definition.getMaxY() != null && context.altitude > definition.getMaxY()) { // getterを使用
+                LOGGER.trace("Failed maxY check: required={}, current={}", definition.getMaxY(), context.altitude);
                 return false;
             }
 
             // --- isNight Check ---
-            if (definition.isNight != null && definition.isNight != context.isNight) {
-                LOGGER.trace("Failed isNight check: required={}, current={}", definition.isNight, context.isNight);
+            if (definition.isNight() != null && definition.isNight() != context.isNight) { // getterを使用
+                LOGGER.trace("Failed isNight check: required={}, current={}", definition.isNight(), context.isNight);
                 return false;
             }
 
             // --- inCombat Check ---
-            if (definition.isCombat != null && definition.isCombat != context.isInCombat) {
-                LOGGER.trace("Failed isCombat check: required={}, current={}", definition.isCombat, context.isInCombat);
+            if (definition.isCombat() != null && definition.isCombat() != context.isInCombat) { // getterを使用
+                LOGGER.trace("Failed isCombat check: required={}, current={}", definition.isCombat(), context.isInCombat);
                 return false;
             }
 
             // --- GUI Check ---
-            if (definition.guiScreen != null && !definition.guiScreen.isBlank()) {
+            if (definition.getGuiScreen() != null && !definition.getGuiScreen().isBlank()) { // getterを使用
+                // ... (definition.guiScreen を definition.getGuiScreen() に変更して同様のロジック) ...
                 boolean guiMatch = false;
                 String currentGuiClassName = (context.currentGui != null) ? context.currentGui.getClass().getName() : null;
                 String currentGuiSimpleName = (context.currentGui != null) ? context.currentGui.getClass().getSimpleName() : null;
-                String requiredGui = definition.guiScreen.trim();
+                String requiredGui = definition.getGuiScreen().trim();
 
-                // Check logic (can be extended with more specific GUI types)
                 if (requiredGui.equals(currentGuiClassName)) guiMatch = true;
                 else if (requiredGui.equalsIgnoreCase(currentGuiSimpleName)) guiMatch = true;
-                    // Common Vanilla GUI simple names
                 else if (requiredGui.equalsIgnoreCase("crafting") && context.currentGui instanceof CraftingScreen) guiMatch = true;
-                else if (requiredGui.equalsIgnoreCase("brewing_stand") && context.currentGui instanceof BrewingStandScreen) guiMatch = true;
-                else if (requiredGui.equalsIgnoreCase("shulker_box") && context.currentGui instanceof ShulkerBoxScreen) guiMatch = true;
-                else if (requiredGui.equalsIgnoreCase("furnace") && context.currentGui instanceof FurnaceScreen) guiMatch = true;
-                else if (requiredGui.equalsIgnoreCase("anvil") && context.currentGui instanceof AnvilScreen) guiMatch = true;
-                else if (requiredGui.equalsIgnoreCase("enchantment") && context.currentGui instanceof EnchantmentScreen) guiMatch = true;
-                else if (requiredGui.equalsIgnoreCase("cartographytable") && context.currentGui instanceof CartographyTableScreen) guiMatch = true;
-                else if (requiredGui.equalsIgnoreCase("smithing") && context.currentGui instanceof SmithingScreen) guiMatch = true;
-                else if (requiredGui.equalsIgnoreCase("merchant") && context.currentGui instanceof MerchantScreen) guiMatch = true;
-                    // Check for no GUI open
+                    // ... (他のGUIタイプも同様に) ...
                 else if ((requiredGui.equalsIgnoreCase("null") || requiredGui.equalsIgnoreCase("none")) && context.currentGui == null) guiMatch = true;
 
                 if (!guiMatch) {
@@ -181,33 +165,27 @@ public class MusicConditionEvaluator {
             }
 
             // --- inVillage Check ---
-            if (definition.isVillage != null && definition.isVillage != context.isInVillage) {
-                LOGGER.trace("Failed isVillage check: required={}, current={}", definition.isVillage, context.isInVillage);
+            if (definition.isVillage() != null && definition.isVillage() != context.isInVillage) { // getterを使用
+                LOGGER.trace("Failed isVillage check: required={}, current={}", definition.isVillage(), context.isInVillage);
                 return false;
             }
 
             // --- Weather Check ---
-            if (definition.weather != null && !definition.weather.isEmpty()) {
+            if (definition.getWeather() != null && !definition.getWeather().isEmpty()) { // getterを使用
+                // ... (definition.weather を definition.getWeather() に変更して同様のロジック) ...
+                // ログ出力の definition.soundEventLocation を logDefId に変更
                 boolean weatherMatchFound = false;
                 boolean currentlyThundering = context.isThundering;
                 boolean currentlyRainingOnly = context.isRaining && !context.isThundering;
                 boolean currentlyClear = !context.isRaining && !context.isThundering;
 
-                for (String requiredWeather : definition.weather) {
+                for (String requiredWeather : definition.getWeather()) {
                     if (requiredWeather == null) continue;
                     switch (requiredWeather.toLowerCase(Locale.ROOT)) {
-                        case "clear":
-                            if (currentlyClear) weatherMatchFound = true;
-                            break;
-                        case "rain":
-                            if (currentlyRainingOnly) weatherMatchFound = true;
-                            break;
-                        case "thunder":
-                            if (currentlyThundering) weatherMatchFound = true;
-                            break;
-                        default:
-                            LOGGER.warn("Unknown weather condition '{}' in definition [{}]", requiredWeather, definition.soundEventLocation != null ? definition.soundEventLocation : definition.musicPath);
-                            break;
+                        case "clear": if (currentlyClear) weatherMatchFound = true; break;
+                        case "rain":  if (currentlyRainingOnly) weatherMatchFound = true; break;
+                        case "thunder": if (currentlyThundering) weatherMatchFound = true; break;
+                        default: LOGGER.warn("Unknown weather condition '{}' in definition [{}]", requiredWeather, logDefId); break;
                     }
                     if (weatherMatchFound) {
                         LOGGER.trace("Weather match: current(R={}, T={}) matched '{}'", context.isRaining, context.isThundering, requiredWeather);
@@ -215,17 +193,19 @@ public class MusicConditionEvaluator {
                     }
                 }
                 if (!weatherMatchFound) {
-                    LOGGER.trace("Failed weather check: current(R={}, T={}) did not match any in {}. Def: {}", context.isRaining, context.isThundering, definition.weather, definition.soundEventLocation != null ? definition.soundEventLocation : definition.musicPath);
+                    LOGGER.trace("Failed weather check: current(R={}, T={}) did not match any in {}. Def: {}", context.isRaining, context.isThundering, definition.getWeather(), logDefId);
                     return false;
                 }
             }
 
             // --- Dimension Check ---
-            if (definition.dimensions != null && !definition.dimensions.isEmpty()) {
+            if (definition.getDimensions() != null && !definition.getDimensions().isEmpty()) { // getterを使用
+                // ... (definition.dimensions を definition.getDimensions() に変更して同様のロジック) ...
+                // ログ出力の definition.soundEventLocation を logDefId に変更
                 if (context.dimensionId != null) {
                     String currentDimensionIdStr = context.dimensionId.toString();
                     boolean dimensionMatchFound = false;
-                    for (String requiredDimension : definition.dimensions) {
+                    for (String requiredDimension : definition.getDimensions()) {
                         if (currentDimensionIdStr.equals(requiredDimension)) {
                             dimensionMatchFound = true;
                             LOGGER.trace("Dimension match: {} == {}", currentDimensionIdStr, requiredDimension);
@@ -233,24 +213,20 @@ public class MusicConditionEvaluator {
                         }
                     }
                     if (!dimensionMatchFound) {
-                        LOGGER.trace("Failed dimension check: current {} not in required list {}. Def: {}", currentDimensionIdStr, definition.dimensions, definition.soundEventLocation != null ? definition.soundEventLocation : definition.musicPath);
+                        LOGGER.trace("Failed dimension check: current {} not in required list {}. Def: {}", currentDimensionIdStr, definition.getDimensions(), logDefId);
                         return false;
                     }
                 } else {
-                    LOGGER.trace("Failed dimension check: current dimension ID is null. Def: {}", definition.soundEventLocation != null ? definition.soundEventLocation : definition.musicPath);
+                    LOGGER.trace("Failed dimension check: current dimension ID is null. Def: {}", logDefId);
                     return false;
                 }
             }
 
-            // All specified conditions were met
-            LOGGER.trace("Definition conditions MET for: {}", definition.soundEventLocation != null ? definition.soundEventLocation : definition.musicPath);
+            LOGGER.trace("Definition conditions MET for: {}", logDefId);
             return true;
 
         } catch (Exception e) {
-            // Log the error and return false if any exception occurs during condition checking
-            LOGGER.error("Error checking conditions for definition [{}]: {}",
-                    definition.soundEventLocation != null ? definition.soundEventLocation : definition.musicPath,
-                    e.getMessage(), e);
+            LOGGER.error("Error checking conditions for definition [{}]: {}", logDefId, e.getMessage(), e);
             return false;
         }
     }

@@ -1,9 +1,10 @@
 package com.zoma1101.music_player.client.events;
 
 import com.zoma1101.music_player.Music_Player;
-import net.minecraft.client.Minecraft;
+import com.zoma1101.music_player.client.SoundPackSelectionScreen;
+import net.minecraft.client.Minecraft; // Minecraftインスタンス取得のため
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.gui.screens.packs.PackSelectionScreen; // PackSelectionScreen をインポート
+import net.minecraft.client.gui.screens.packs.PackSelectionScreen;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.network.chat.Component;
 import net.minecraftforge.api.distmarker.Dist;
@@ -20,12 +21,12 @@ public class GuiEventHandler {
         if (screen instanceof PackSelectionScreen) { // Minecraftのバニラのリソースパック選択画面
             Component buttonText = Component.translatable("gui.music_player.open_soundpack_screen");
             Button soundPackButton = Button.builder(buttonText, (button) -> {
-                        // SoundPackLoaderのインスタンス生成を削除
-                        //Minecraft.getInstance().setScreen(new SoundPackSelectionScreen(screen));
+                        // 新しいサウンドパック選択画面を開く
+                        Minecraft.getInstance().setScreen(new SoundPackSelectionScreen(screen));
                     })
                     .bounds(
-                            screen.width / 2 + 4,
-                            screen.height - 24,
+                            screen.width / 2 + 4, // 位置を調整 (バニラのボタンと重ならないように)
+                            screen.height - 24, // Y座標を少し上に
                             150,
                             20
                     )

@@ -72,7 +72,6 @@ public class MusicDefinition {
     @Nullable public List<String> getDimensions() { return dimensions; }
 
     public String getSoundPackId() { return soundPackId; }
-    public Path getAbsoluteOggPath() { return absoluteOggPath; }
     public String getSoundEventKey() { return soundEventKey; }
     public ResourceLocation getOggResourceLocation() { return oggResourceLocation; }
 

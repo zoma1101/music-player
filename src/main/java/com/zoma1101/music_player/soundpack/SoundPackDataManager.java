@@ -2,14 +2,16 @@ package com.zoma1101.music_player.soundpack; // パッケージは適宜調整�
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.google.gson.JsonObject; // pack.mcmeta パース用
-import com.google.gson.JsonParser; // pack.mcmeta パース用
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.mojang.logging.LogUtils;
+import com.zoma1101.music_player.sound.MusicDefinition;
 import net.minecraft.ResourceLocationException;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
-
 import java.io.IOException;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
@@ -17,6 +19,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,34 +30,43 @@ import static com.zoma1101.music_player.Music_Player.MOD_ID; // MOD_ID は適切
 
 public class SoundPackDataManager {
     private static final Logger LOGGER = LogUtils.getLogger();
-    private static final Gson GSON = new GsonBuilder().create(); // 必要なら setPrettyPrinting() など
+    // GsonBuilder().setPrettyPrinting().create() で整形して出力するとデバッグしやすい
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     public static final Path SOUNDPACKS_BASE_DIR = Paths.get("soundpacks");
     private static final String PACK_METADATA_FILE = "pack.mcmeta";
     private static final String CONDITIONS_DIR_NAME = "conditions";
+    // private static final String MUSIC_DIR_NAME = "music"; // music ファイルが置かれる想定のディレクトリ (MusicDefinitionのパスで指定される)
 
-    // MOD ID を使ったサウンドイベントの名前空間
-    public static final String SOUND_EVENT_NAMESPACE = MOD_ID.toLowerCase() + "_soundpacks";
-
-    private final List<SoundPack> availableSoundPacks = new ArrayList<>();
+    // SoundPackInfo のリスト (pack.mcmeta の情報)
+    private final List<SoundPack> loadedSoundPacks = new ArrayList<>();
+    // ロードされた全ての MusicDefinition のリスト
     private final List<MusicDefinition> allMusicDefinitions = new ArrayList<>();
-    // SoundEventLocation から OGG ファイルの絶対パスへのマッピング (DynamicSoundResourcePack で使用)
-    private final Map<ResourceLocation, Path> soundEventToOggPathMap = new HashMap<>();
+    // OGGファイルを提供するためのマッピング (MODのリソースとして解決されるID -> OGGの絶対パス)
+    // ModSoundResourcePack がこのマップを使用してOGGファイルを提供する
+    private final Map<ResourceLocation, Path> oggResourceMap = new HashMap<>();
 
-    // アクティブなサウンドパックのIDリスト (設定などで管理)
-    private List<String> activeSoundPackIds = new ArrayList<>(); // 例: ["dragon_quest", "another_pack"]
+    // アクティブなサウンドパックのIDリスト (将来的には設定で管理)
+    // 初期状態ではロードされた全てのパックをアクティブとして扱う
+    private final List<String> activeSoundPackIds = new ArrayList<>();
 
     public SoundPackDataManager() {
-        // 初期化時にロード処理を呼び出すなど
-        // loadActiveSoundPackIdsFromConfig(); // 設定からアクティブなパックIDをロード
-        // reloadSoundPacks();
+        // コンストラクタでは特にロードは行わない
+        // ロードはクライアントセットアップイベントやリロードイベントで行う
     }
 
-    public void reloadSoundPacks() {
-        LOGGER.info("Reloading all sound packs from: {}", SOUNDPACKS_BASE_DIR.toAbsolutePath());
-        availableSoundPacks.clear();
+    /**
+     * soundpacks ディレクトリからサウンドパックを発見し、メタデータと音楽定義をロードします。
+     * クライアントのリロードイベントなどで呼び出されます。
+     */
+    public void discoverAndLoadPacks() {
+        LOGGER.info("Discovering and loading sound packs from: {}", SOUNDPACKS_BASE_DIR.toAbsolutePath());
+        // 既存のデータをクリア
+        loadedSoundPacks.clear();
         allMusicDefinitions.clear();
-        soundEventToOggPathMap.clear();
+        oggResourceMap.clear();
+        activeSoundPackIds.clear(); // リロード時にアクティブリストもリセット (デフォルトで全てアクティブにするため)
 
+        // soundpacks ディレクトリが存在しない場合は作成
         if (!Files.exists(SOUNDPACKS_BASE_DIR)) {
             try {
                 Files.createDirectories(SOUNDPACKS_BASE_DIR);
@@ -64,22 +76,35 @@ public class SoundPackDataManager {
                 return;
             }
         }
+        // soundpacks パスがディレクトリでない場合はエラー
         if (!Files.isDirectory(SOUNDPACKS_BASE_DIR)) {
             LOGGER.error("Soundpacks path exists but is not a directory: {}", SOUNDPACKS_BASE_DIR.toAbsolutePath());
             return;
         }
 
+        // soundpacks ディレクトリ直下の各ディレクトリをサウンドパックとして処理
         try (Stream<Path> packDirs = Files.list(SOUNDPACKS_BASE_DIR)) {
             packDirs.filter(Files::isDirectory).forEach(this::loadSingleSoundPack);
         } catch (IOException e) {
             LOGGER.error("Error listing sound pack directories in: {}", SOUNDPACKS_BASE_DIR.toAbsolutePath(), e);
         }
 
-        LOGGER.info("Finished reloading sound packs. Found {} packs, {} music definitions.",
-                availableSoundPacks.size(), allMusicDefinitions.size());
+        // デフォルトではロードされた全てのパックをアクティブにする (テスト用)
+        // 将来的にはGUIやコンフィグで選択できるようにする
+        if (!loadedSoundPacks.isEmpty()) {
+            activeSoundPackIds.addAll(loadedSoundPacks.stream().map(SoundPack::getId).toList());
+            LOGGER.info("Activated all loaded sound packs by default: {}", activeSoundPackIds);
+        }
+
+        LOGGER.info("Finished loading sound packs. Found {} packs, {} music definitions, {} OGG resources.",
+                loadedSoundPacks.size(), allMusicDefinitions.size(), oggResourceMap.size());
     }
 
+    /**
+     * 指定されたサウンドパックディレクトリから pack.mcmeta と音楽定義をロードします。
+     */
     private void loadSingleSoundPack(Path packRootDir) {
+        // ディレクトリ名をパックIDとして使用 (小文字化し、不正な文字を置換)
         String packId = packRootDir.getFileName().toString().toLowerCase().replaceAll("[^a-z0-9_.-]", "_");
         LOGGER.info("Processing sound pack directory: {} (ID: {})", packRootDir.getFileName(), packId);
 
@@ -98,16 +123,18 @@ public class SoundPackDataManager {
                 LOGGER.warn("  Invalid {} format (missing 'pack' object) in pack: {}. Skipping.", PACK_METADATA_FILE, packId);
                 return;
             }
-            String description = packMeta.has("description") ? packMeta.get("description").getAsString() : "No description";
-            int packFormat = packMeta.has("pack_format") ? packMeta.get("pack_format").getAsInt() : -1; // 不正な値
+            // description は Component として扱うのが望ましいが、ここではシンプルにStringとして取得
+            String description = packMeta.has("description") ? packMeta.get("description").getAsString() : "No description for " + packId;
+            int packFormat = packMeta.has("pack_format") ? packMeta.get("pack_format").getAsInt() : -1;
 
-            if (packFormat == -1) { // pack_format は必須と考える
+            if (packFormat == -1) {
                 LOGGER.warn("  Missing 'pack_format' in {} for pack: {}. Skipping.", PACK_METADATA_FILE, packId);
                 return;
             }
 
+            // SoundPack オブジェクトを作成し、リストに追加
             soundPack = new SoundPack(packId, Component.literal(description), packFormat, packRootDir);
-            availableSoundPacks.add(soundPack);
+            loadedSoundPacks.add(soundPack);
             LOGGER.info("  Loaded SoundPack metadata: '{}', format: {}", description, packFormat);
 
         } catch (Exception e) {
@@ -123,6 +150,7 @@ public class SoundPackDataManager {
             return;
         }
 
+        // conditions ディレクトリ以下の全ての .json ファイルを走査
         try (Stream<Path> jsonFiles = Files.walk(conditionsDir)) {
             jsonFiles.filter(p -> p.toString().endsWith(".json") && Files.isRegularFile(p))
                     .forEach(jsonPath -> loadMusicDefinition(jsonPath, soundPack));
@@ -131,120 +159,96 @@ public class SoundPackDataManager {
         }
     }
 
+    /**
+     * 指定されたJSONファイルから単一の MusicDefinition をロードします。
+     *
+     * @param jsonPath  音楽定義JSONファイルのパス
+     * @param soundPack この定義が属する SoundPack
+     */
     private void loadMusicDefinition(Path jsonPath, SoundPack soundPack) {
         try (Reader reader = Files.newBufferedReader(jsonPath, StandardCharsets.UTF_8)) {
+            // JSONを MusicDefinition オブジェクトに変換
             MusicDefinition definition = GSON.fromJson(reader, MusicDefinition.class);
-            if (definition == null || definition.music == null || definition.music.isBlank()) {
+
+            // 必須フィールドのチェック
+            // MusicDefinition クラスに public String music; フィールドと getMusicFileInPack() メソッドがある前提
+            if (definition == null || definition.getMusicFileInPack() == null || definition.getMusicFileInPack().isBlank()) {
                 LOGGER.warn("  Invalid or incomplete music definition in file: {}. Missing 'music' field.", jsonPath);
                 return;
             }
 
+            // MusicDefinition に所属サウンドパックIDをセット
             definition.setSoundPackId(soundPack.getId());
 
-            // "music" フィールドのパース: "pack_id/music/bgm_combat.ogg"
-            String[] musicPathParts = definition.getMusicPathFromJson().split("/", 2);
-            if (musicPathParts.length < 2) {
-                LOGGER.warn("  Invalid 'music' path format in {}: '{}'. Expected 'pack_id/path/to/sound.ogg'.", jsonPath, definition.getMusicPathFromJson());
-                return;
-            }
-            String musicPathPackId = musicPathParts[0];
-            String relativeOggPath = musicPathParts[1]; // 例: "music/bgm_combat.ogg"
-
-            if (!musicPathPackId.equals(soundPack.getId())) {
-                LOGGER.warn("  'music' path in {} contains pack_id '{}' which does not match current sound pack '{}'. Skipping.",
-                        jsonPath, musicPathPackId, soundPack.getId());
-                return;
-            }
-            definition.setRelativeOggPathInPack(relativeOggPath);
-
-
             // OGGファイルの絶対パスを構築
-            // soundpacks/任意の名前/assets/pack_id/music/bgm_combat.ogg
-            Path absoluteOggPath = soundPack.getAssetsDirectory().resolve(relativeOggPath);
+            // JSONの "music" フィールドは "music/bgm_combat.ogg" のようなパック内の相対パスを想定
+            // 絶対パス: soundpacks/pack_id/assets/pack_id/music/bgm_combat.ogg
+            Path absoluteOggPath = soundPack.getAssetsDirectory().resolve(definition.getMusicFileInPack());
+
+            // OGGファイルが存在するかチェック
             if (!Files.exists(absoluteOggPath) || !Files.isRegularFile(absoluteOggPath)) {
                 LOGGER.warn("  Sound file not found for definition in {}: {} (Expected at {})",
-                        jsonPath.getFileName(), definition.getMusicPathFromJson(), absoluteOggPath);
+                        jsonPath.getFileName(), definition.getMusicFileInPack(), absoluteOggPath);
                 return;
             }
+            // MusicDefinition に絶対パスをセット
             definition.setAbsoluteOggPath(absoluteOggPath);
 
-            // サウンドイベントの ResourceLocation を生成
-            // パス部分は pack_id/music/bgm_combat (拡張子なし)
-            String eventPathName = soundPack.getId() + "/" + relativeOggPath.substring(0, relativeOggPath.lastIndexOf('.'));
-            try {
-                ResourceLocation eventLoc = ResourceLocation.fromNamespaceAndPath(SOUND_EVENT_NAMESPACE, eventPathName);
-                definition.setSoundEventLocation(eventLoc);
+            // sounds.json のトップレベルキー (SoundEventKey) を生成
+            String soundEventKey = getString(soundPack, definition);
 
+            // MusicDefinition に SoundEventKey をセット
+            definition.setSoundEventKey(soundEventKey);
+
+            // ModSoundResourcePack がOGGファイルを提供するための ResourceLocation を生成
+            // 形式: "modid:pack_id/path/to/sound.ogg"
+            // これは sounds.json の "sounds": [{"name": "..."}] で使われるID
+            String oggResourcePath = soundPack.getId() + "/" + definition.getMusicFileInPack(); // 例: "pack_id/music/bgm_combat.ogg"
+            // ResourceLocation として有効な文字のみを使用するようにクリーンアップ
+            oggResourcePath = oggResourcePath.toLowerCase().replaceAll("[^a-z0-9_./-]", "_");
+
+            try {
+                ResourceLocation oggRL = ResourceLocation.fromNamespaceAndPath(MOD_ID, oggResourcePath);
+                // MusicDefinition に OGG ResourceLocation をセット
+                definition.setOggResourceLocation(oggRL);
+
+                // MusicDefinition が最終的に有効かチェックし、リストとマップに追加
                 if (definition.isValid()) {
                     allMusicDefinitions.add(definition);
-                    soundEventToOggPathMap.put(eventLoc, absoluteOggPath);
-                    LOGGER.debug("  Loaded music definition: {}, event: {}", definition.getMusicPathFromJson(), eventLoc);
+                    // OGGファイル提供用のマップに登録
+                    oggResourceMap.put(oggRL, absoluteOggPath);
+                    LOGGER.debug("  Loaded music definition: {}, eventKey: {}, oggRL: {}",
+                            definition.getMusicFileInPack(), definition.getSoundEventKey(), definition.getOggResourceLocation());
                 } else {
-                    LOGGER.warn("  Music definition from {} was parsed but deemed invalid after processing.", jsonPath);
+                    // isValid() が false の場合 (例: 設定漏れなど)
+                    LOGGER.warn("  Music definition from {} was parsed but deemed invalid after processing. Definition: {}", jsonPath, definition);
                 }
 
             } catch (ResourceLocationException e) {
-                LOGGER.warn("  Invalid characters in generated sound event path '{}' for pack {}. Skipping definition from {}.",
-                        eventPathName, soundPack.getId(), jsonPath, e);
+                // 生成された ResourceLocation が不正な場合
+                LOGGER.warn("  Invalid characters in generated OGG ResourceLocation path '{}' for pack {}. Skipping definition from {}. Error: {}",
+                        oggResourcePath, soundPack.getId(), jsonPath, e.getMessage());
             }
 
         } catch (Exception e) {
+            // JSONパースやファイル読み込みエラーなど
             LOGGER.error("  Failed to parse or process music definition file: {}", jsonPath, e);
         }
     }
 
-    // --- データアクセス用メソッド ---
-
-    public List<SoundPack> getAvailableSoundPacks() {
-        return List.copyOf(availableSoundPacks);
-    }
-
-    /**
-     * アクティブなサウンドパックに含まれ、優先度順にソートされたMusicDefinitionのリストを取得します。
-     */
-    public List<MusicDefinition> getActiveMusicDefinitionsSorted() {
-        return allMusicDefinitions.stream()
-                .filter(def -> activeSoundPackIds.contains(def.getSoundPackId()))
-                .sorted((a, b) -> Integer.compare(b.getPriority(), a.getPriority())) // 優先度高い順
-                .collect(Collectors.toList());
-    }
-
-    public Map<ResourceLocation, Path> getSoundEventToOggPathMap() {
-        // アクティブなパックのサウンドのみをフィルタリングして返すことも検討
-        // ここでは簡単のため全て返す (DynamicSoundResourcePack側でフィルタリングするならそれでも良い)
-        return Map.copyOf(soundEventToOggPathMap);
-    }
-
-    /**
-     * 特定のサウンドパックIDに対応するサウンドイベントとOGGパスのマッピングを取得します。
-     * DynamicSoundResourcePack のコンストラクタなどで使用します。
-     */
-    public Map<ResourceLocation, Path> getSoundsForPack(String packId) {
-        Map<ResourceLocation, Path> filteredMap = new HashMap<>();
-        String expectedEventPathPrefix = packId + "/"; // イベントパスは "pack_id/..." で始まる
-
-        for (Map.Entry<ResourceLocation, Path> entry : soundEventToOggPathMap.entrySet()) {
-            ResourceLocation eventLocation = entry.getKey();
-            // 名前空間が一致し、かつパスが期待されるプレフィックスで始まるか
-            if (eventLocation.getNamespace().equals(SOUND_EVENT_NAMESPACE) &&
-                    eventLocation.getPath().startsWith(expectedEventPathPrefix)) {
-                filteredMap.put(eventLocation, entry.getValue());
-            }
+    private static @NotNull String getString(SoundPack soundPack, MusicDefinition definition) {
+        String relativeOggPathWithoutExt = definition.getMusicFileInPack();
+        // 拡張子 .ogg を取り除く
+        if (relativeOggPathWithoutExt.toLowerCase().endsWith(".ogg")) {
+            relativeOggPathWithoutExt = relativeOggPathWithoutExt.substring(0, relativeOggPathWithoutExt.length() - 4);
         }
-        return filteredMap;
+        // ResourceLocation のパス部分として使用するため、小文字化し不正な文字を置換
+        String soundEventPath = soundPack.getId() + "/" + relativeOggPathWithoutExt;
+        // ResourceLocation の形式 "namespace:path" にするため、MOD_ID を名前空間として付与
+        String soundEventKey = MOD_ID + ":" + soundEventPath;
+        // ResourceLocation として有効な文字のみを使用するようにクリーンアップ
+        soundEventKey = soundEventKey.toLowerCase().replaceAll("[^a-z0-9_./:-]", "_");
+        return soundEventKey;
     }
 
-
-    // --- アクティブなサウンドパックの管理 (例) ---
-    public void setActiveSoundPackIds(List<String> ids) {
-        this.activeSoundPackIds = new ArrayList<>(ids);
-        LOGGER.info("Active sound packs updated: {}", activeSoundPackIds);
-        // 必要であれば、ここでキャッシュの再構築などを行う
-    }
-
-    public List<String> getActiveSoundPackIds() {
-        return List.copyOf(activeSoundPackIds);
-    }
-
-    // (設定ファイルからアクティブなIDをロード/セーブするメソッドもここに追加すると良いでしょう)
 }
