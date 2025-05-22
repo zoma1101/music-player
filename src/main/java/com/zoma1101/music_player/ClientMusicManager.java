@@ -73,25 +73,42 @@ public class ClientMusicManager {
         SoundInstance soundBeingPlayed = event.getSound();
         if (soundBeingPlayed == null) return;
 
-        ResourceLocation playingSoundEventLocation = soundBeingPlayed.getLocation(); // これは拡張子なしのサウンドイベントID
+        ResourceLocation playingSoundEventLocation = soundBeingPlayed.getLocation();
         SoundSource soundSource = soundBeingPlayed.getSource();
+
+        // 音楽ソースのサウンドか確認
         if (SoundSource.MUSIC.equals(soundSource)) {
             String namespace = playingSoundEventLocation.getNamespace();
 
-            // ★★★ 自身のMODの音楽かどうかの判定を修正 ★★★
-            boolean isOurModMusic = false;
-            if (Music_Player.MOD_ID.equals(namespace)) {
-                MusicDefinition def = Music_Player.soundPackManager.getMusicDefinitionByEventKey(playingSoundEventLocation.toString());
-                if (def != null && currentMusicSoundEventKey != null && currentMusicSoundEventKey.equals(def.getSoundEventKey())) {
-                    isOurModMusic = true;
-                }
-            }
+            // MODの音楽が再生されるべき状況か (currentMusicSoundEventKey が null でない)
+            boolean modMusicShouldBePlaying = currentMusicSoundEventKey != null;
 
-            if (isOurModMusic) {
-                if (currentMusicInstance != null && currentMusicInstance == soundBeingPlayed) {
-                    LOGGER.trace("[onPlaySound] currentMusicInstance matches soundBeingPlayed.");
-                } else {
-                    LOGGER.warn("[onPlaySound] currentMusicInstance does NOT match soundBeingPlayed. This might indicate an issue if our music is playing unexpectedly.");
+            if (Music_Player.MOD_ID.equals(namespace)) {
+                // 再生されようとしているのがMODの音楽の場合
+                // MusicDefinition を取得して、それが現在再生されるべき音楽 (currentMusicSoundEventKey) と一致するか確認
+                MusicDefinition def = Music_Player.soundPackManager.getMusicDefinitionByEventKey(playingSoundEventLocation.getPath()); // getPath() を使用
+                boolean isTheCorrectModMusic = def != null && currentMusicSoundEventKey != null && currentMusicSoundEventKey.equals(def.getSoundEventKey());
+
+                if (isTheCorrectModMusic) {
+                    // 正しいMODの音楽が再生されようとしている
+                    if (currentMusicInstance != soundBeingPlayed) {
+                        LOGGER.trace("[onPlaySound] Correct MOD music [{}] is about to play with a new instance. Current instance was: {}", playingSoundEventLocation, currentMusicInstance);
+                        // currentMusicInstance = soundBeingPlayed; // 必要に応じて更新
+                    }
+                } else if (currentMusicSoundEventKey != null) {
+                    LOGGER.warn("[onPlaySound] An incorrect MOD music [{}] was about to play. Expected key: [{}]. Stopping it.", playingSoundEventLocation, currentMusicSoundEventKey);
+                    event.setSound(null); // サウンドの再生をキャンセル
+                }
+                else {
+                    LOGGER.warn("[onPlaySound] MOD music [{}] was about to play, but no MOD music should be playing. Stopping it.", playingSoundEventLocation);
+                    event.setSound(null);
+                }
+
+            } else {
+                // 再生されようとしているのがMOD以外の音楽 (例: バニラの音楽) の場合
+                if (modMusicShouldBePlaying) {
+                    LOGGER.info("[onPlaySound] MOD music should be playing (Key: {}). Stopping other music: {}", currentMusicSoundEventKey, playingSoundEventLocation);
+                    event.setSound(null); // サウンドの再生をキャンセル
                 }
             }
         }

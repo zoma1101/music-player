@@ -1,11 +1,8 @@
 package com.zoma1101.music_player.sound;
 
 import com.google.gson.*;
-// JsonArray と JsonObject は generateSoundsJsonContent でのみ使用するため、ここでは不要
-// import com.google.gson.JsonArray;
-// import com.google.gson.JsonObject;
 import com.mojang.logging.LogUtils;
-import com.zoma1101.music_player.Music_Player; // MODメインクラスを参照
+import com.zoma1101.music_player.Music_Player;
 import net.minecraft.ResourceLocationException;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -28,10 +25,13 @@ import java.util.stream.Stream;
 
 public class SoundPackManager {
     private static final Logger LOGGER = LogUtils.getLogger();
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create(); // 整形して出力
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     public static final Path SOUNDPACKS_BASE_DIR = Paths.get("soundpacks");
     private static final String PACK_METADATA_FILE = "pack.mcmeta";
     private static final String CONDITIONS_DIR_NAME = "conditions";
+    // OGGリソースのResourceLocationパスのプレフィックス
+    private static final String OGG_RESOURCE_SOUNDS_PREFIX = "sounds/";
+
 
     private final List<SoundPackInfo> loadedSoundPacks = new ArrayList<>();
     private final List<MusicDefinition> allMusicDefinitions = new ArrayList<>();
@@ -49,7 +49,7 @@ public class SoundPackManager {
         loadedSoundPacks.clear();
         allMusicDefinitions.clear();
         oggResourceMap.clear();
-        musicDefinitionByEventKey.clear(); // Clear this map as well
+        musicDefinitionByEventKey.clear();
         activeSoundPackIds.clear();
 
         if (!Files.exists(SOUNDPACKS_BASE_DIR)) {
@@ -107,15 +107,36 @@ public class SoundPackManager {
                 return;
             }
 
-            soundPackInfo = new SoundPackInfo(packId, Component.literal(description), packFormat, packRootDir);
+            soundPackInfo = new SoundPackInfo(packId, Component.literal(description), packRootDir);
+
+            Path iconPath = packRootDir.resolve("pack.png");
+            if (Files.exists(iconPath) && Files.isRegularFile(iconPath)) {
+                try {
+                    // アイコンのResourceLocation: music_player:pack_id/pack.png
+                    // ModSoundResourcePackはこれを受け取り、packRootDir/pack.png を提供する
+                    ResourceLocation iconRl = ResourceLocation.fromNamespaceAndPath(Music_Player.MOD_ID, packId + "/pack.png");
+                    soundPackInfo.setIconLocation(iconRl);
+                    LOGGER.info("  Found pack icon for {}: {}", packId, iconRl);
+                } catch (ResourceLocationException e) {
+                    LOGGER.warn("  Could not create ResourceLocation for pack icon for {}: {}", packId, e.getMessage());
+                }
+            } else {
+                LOGGER.info("  No pack.png found for pack: {}", packId);
+            }
+
             loadedSoundPacks.add(soundPackInfo);
             LOGGER.info("  Loaded SoundPack metadata: '{}', format: {}", description, packFormat);
 
-        } catch (Exception e) {
+        } catch (JsonParseException | IOException e) { // より具体的な例外をキャッチ
             LOGGER.error("  Failed to read or parse {} for pack {}: {}", PACK_METADATA_FILE, packId, e.getMessage(), e);
+            return;
+        } catch (Exception e) { // 予期せぬエラー
+            LOGGER.error("  Unexpected error while processing metadata for pack {}: {}", packId, e.getMessage(), e);
             return;
         }
 
+        // soundPackInfo.getAssetsDirectory() は packRootDir.resolve("assets").resolve(packId) のような
+        // パック固有のアセットルートを返すことを期待
         Path conditionsDir = soundPackInfo.getAssetsDirectory().resolve(CONDITIONS_DIR_NAME);
         if (!Files.exists(conditionsDir) || !Files.isDirectory(conditionsDir)) {
             LOGGER.info("  No conditions directory found at: {}. No music definitions will be loaded for this pack.", conditionsDir);
@@ -134,12 +155,13 @@ public class SoundPackManager {
         try (Reader reader = Files.newBufferedReader(jsonPath, StandardCharsets.UTF_8)) {
             MusicDefinition definition = GSON.fromJson(reader, MusicDefinition.class);
             if (definition == null || definition.musicFileInPack == null || definition.musicFileInPack.isBlank()) {
-                LOGGER.warn("  Invalid or incomplete music definition in file: {}. Missing 'music' field.", jsonPath);
+                LOGGER.warn("  Invalid or incomplete music definition in file: {}. Missing 'musicFileInPack' field.", jsonPath);
                 return;
             }
-
+            // musicFileInPack は packId 固有のアセットディレクトリからの相対パス (例: "sounds/music/track1.ogg")
             definition.setSoundPackId(soundPackInfo.getId());
 
+            // absoluteOggPath は packRootDir/assets/packId/sounds/music/track1.ogg のような絶対パス
             Path absoluteOggPath = soundPackInfo.getAssetsDirectory().resolve(definition.getMusicFileInPack());
             if (!Files.exists(absoluteOggPath) || !Files.isRegularFile(absoluteOggPath)) {
                 LOGGER.warn("  Sound file not found for definition in {}: {} (Expected at {})",
@@ -148,30 +170,23 @@ public class SoundPackManager {
             }
             definition.setAbsoluteOggPath(absoluteOggPath);
 
-            // --- Path and Key Generation ---
             String packId = soundPackInfo.getId();
-            String relativeOggPathFromPackRoot = definition.getMusicFileInPack(); // e.g., "music/bgm_file.ogg"
+            // relativeOggPathFromPackAssets は musicFileInPack と同じ (例: "sounds/music/track1.ogg")
+            String relativeOggPathFromPackAssets = definition.getMusicFileInPack();
 
-            // 1. Generate path without extension (used for several keys)
-            // e.g., "music/bgm_file"
-            String soundEventKey = getSoundEventKey(relativeOggPathFromPackRoot, packId);
+            // soundEventKey: sounds.json のトップレベルキー (例: "your_pack_id/sounds/music/track1")
+            String soundEventKey = getSoundEventKey(relativeOggPathFromPackAssets, packId);
             definition.setSoundEventKey(soundEventKey);
 
-            // 3. OGG ResourceLocation for "name" field in sounds.json
-            // Format: "mod_id:pack_id/path_without_extension"
-            // e.g., "music_player:dq_bgm/music/bgm_file"
-            // SoundManager will take this, get path "dq_bgm/music/bgm_file",
-            // prepend "sounds/", append ".ogg", and use "music_player" namespace.
-            // Resulting request to ModSoundResourcePack: "music_player:sounds/dq_bgm/music/bgm_file.ogg"
-            // Clean for ResourceLocation path
             try {
+                // oggRLForName: sounds.json の "name" フィールド用 (例: "music_player:your_pack_id/sounds/music/track1")
+                // SoundManager はこれを見て "music_player:sounds/your_pack_id/sounds/music/track1.ogg" を要求する
                 ResourceLocation oggRLForName = ResourceLocation.fromNamespaceAndPath(Music_Player.MOD_ID, soundEventKey);
                 definition.setOggResourceLocation(oggRLForName);
 
-                // 4. ResourceLocation key for oggResourceMap
-                // This must match what SoundManager requests from ModSoundResourcePack.
-                // Format: "mod_id:sounds/pack_id/path_without_extension.ogg"
-                String mapKeyPath = "sounds/" + soundEventKey + ".ogg";
+                // mapKeyRL: oggResourceMap のキー、ModSoundResourcePack が受け取るリクエスト
+                // (例: "music_player:sounds/your_pack_id/sounds/music/track1.ogg")
+                String mapKeyPath = OGG_RESOURCE_SOUNDS_PREFIX + soundEventKey + ".ogg";
                 ResourceLocation mapKeyRL = ResourceLocation.fromNamespaceAndPath(Music_Player.MOD_ID, mapKeyPath);
                 oggResourceMap.put(mapKeyRL, absoluteOggPath);
 
@@ -189,27 +204,27 @@ public class SoundPackManager {
 
             } catch (ResourceLocationException e) {
                 LOGGER.warn("  Invalid characters in generated ResourceLocation components for pack '{}', file '{}'. Skipping. Error: {}",
-                        packId, relativeOggPathFromPackRoot, e.getMessage());
+                        packId, relativeOggPathFromPackAssets, e.getMessage());
             }
 
-        } catch (Exception e) {
-            LOGGER.error("  Failed to parse or process music definition file: {}", jsonPath, e);
+        } catch (JsonSyntaxException e) {
+            LOGGER.error("  Failed to parse JSON for music definition file: {}", jsonPath, e);
+        } catch (IOException e) {
+            LOGGER.error("  Failed to read music definition file: {}", jsonPath, e);
+        } catch (Exception e) { // その他の予期せぬエラー
+            LOGGER.error("  Unexpected error processing music definition file: {}", jsonPath, e);
         }
     }
 
-    private static @NotNull String getSoundEventKey(String relativeOggPathFromPackRoot, String packId) {
-        String pathWithoutExtension = relativeOggPathFromPackRoot;
+    private static @NotNull String getSoundEventKey(String relativeOggPathFromPackAssets, String packId) {
+        String pathWithoutExtension = relativeOggPathFromPackAssets;
         if (pathWithoutExtension.toLowerCase().endsWith(".ogg")) {
             pathWithoutExtension = pathWithoutExtension.substring(0, pathWithoutExtension.length() - 4);
         }
-
-        // 2. SoundEventKey (for sounds.json top-level key)
-        // Format: "pack_id/path_without_extension"
-        // e.g., "dq_bgm/music/bgm_file"
-        // Clean for ResourceLocation path
+        // soundEventKey (例: "your_pack_id/sounds/music/track1")
         return (packId + "/" + pathWithoutExtension)
                 .toLowerCase()
-                .replaceAll("[^a-z0-9_./-]", "_");
+                .replaceAll("[^a-z0-9_./-]", "_"); // ResourceLocationのパスとして有効な文字にクリーニング
     }
 
     public MusicDefinition getMusicDefinitionByEventKey(String eventKey) {
@@ -223,7 +238,7 @@ public class SoundPackManager {
     public List<MusicDefinition> getActiveMusicDefinitionsSorted() {
         return allMusicDefinitions.stream()
                 .filter(def -> activeSoundPackIds.contains(def.getSoundPackId()))
-                .sorted((a, b) -> Integer.compare(b.getPriority(), a.getPriority())) // Higher priority first
+                .sorted((a, b) -> Integer.compare(b.getPriority(), a.getPriority()))
                 .collect(Collectors.toList());
     }
 
@@ -243,7 +258,7 @@ public class SoundPackManager {
         LOGGER.info("Generating sounds.json for {} active music definitions.", definitionsToInclude.size());
 
         for (MusicDefinition def : definitionsToInclude) {
-            if (!def.isValid()) { // Should already be valid if it's in allMusicDefinitions and processed correctly
+            if (!def.isValid()) {
                 LOGGER.warn("Skipping invalid definition during sounds.json generation: {}", def);
                 continue;
             }
@@ -252,32 +267,28 @@ public class SoundPackManager {
             JsonArray soundsArray = new JsonArray();
             JsonObject soundObject = new JsonObject();
 
-            // "name" field uses the oggResourceLocation (mod_id:pack_id/path_no_ext)
             soundObject.addProperty("name", def.getOggResourceLocation().toString());
             soundObject.addProperty("stream", true);
 
             soundsArray.add(soundObject);
             soundEntry.add("sounds", soundsArray);
 
-            // Top-level key is the soundEventKey (pack_id/path_no_ext)
             rootJson.add(def.getSoundEventKey(), soundEntry);
         }
 
         if (rootJson.size() == 0) {
             LOGGER.warn("Generated sounds.json is empty after filtering active/valid definitions.");
-            return "{}"; // Should not happen if definitionsToInclude was not empty and definitions were valid
+            return "{}";
         }
         String jsonOutput = GSON.toJson(rootJson);
-        // Limit log output length for very long JSONs
         LOGGER.info("Generated sounds.json content (length {}): {}", jsonOutput.length(), jsonOutput.substring(0, Math.min(jsonOutput.length(), 500)) + (jsonOutput.length() > 500 ? "..." : ""));
         return jsonOutput;
     }
 
     public void setActiveSoundPackIds(List<String> ids) {
-        this.activeSoundPackIds = new ArrayList<>(ids); // Create a new list to avoid external modification issues
+        this.activeSoundPackIds = new ArrayList<>(ids);
         LOGGER.info("Active sound packs updated: {}", this.activeSoundPackIds);
-        // Consider if a resource reload or other update mechanism is needed here
-        // For example, notifying ClientMusicManager
+        // 必要であれば、ここでリソースリロードやClientMusicManagerへの通知などを検討
     }
 
     public List<String> getActiveSoundPackIds() {

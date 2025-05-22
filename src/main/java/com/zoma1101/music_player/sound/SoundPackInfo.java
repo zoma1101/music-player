@@ -1,32 +1,52 @@
 package com.zoma1101.music_player.sound;
 
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 
+import javax.annotation.Nullable;
 import java.nio.file.Path;
 import java.util.Objects;
 
 public class SoundPackInfo {
-    private final String id; // サウンドパックのID (ディレクトリ名から)
+    private final String id;
     private final Component description;
-    private final int packFormat;
-    private final Path rootDirectory; // soundpacks/pack_id/
-    private final Path assetsDirectory; // soundpacks/pack_id/assets/pack_id/ (MOD ID ではなく Pack ID を使う)
+    private final Path packDirectory;
+    @Nullable // アイコンが存在しない場合もあるため
+    private ResourceLocation iconLocation; // アイコンのResourceLocationを保持するフィールド
 
-    public SoundPackInfo(String id, Component description, int packFormat, Path rootDirectory) {
-        this.id = Objects.requireNonNull(id);
-        this.description = Objects.requireNonNull(description);
-        this.packFormat = packFormat;
-        this.rootDirectory = Objects.requireNonNull(rootDirectory);
-        // assets ディレクトリは pack_id を名前空間として使用
-        this.assetsDirectory = rootDirectory.resolve("assets").resolve(id);
+    public SoundPackInfo(String id, Component description, Path packDirectory) {
+        this.id = id;
+        this.description = description;
+        this.packDirectory = packDirectory;
+        // アイコンのResourceLocationはSoundPackManagerで設定される
     }
 
-    public String getId() { return id; }
-    public Component getDescription() { return description; }
-    public int getPackFormat() { return packFormat; }
-    public Path getRootDirectory() { return rootDirectory; }
-    public Path getAssetsDirectory() { return assetsDirectory; }
+    public String getId() {
+        return id;
+    }
 
+    public Component getDescription() {
+        return description;
+    }
+
+
+    public Path getAssetsDirectory() {
+        // assets フォルダのパスを返す
+        // 修正前: return packDirectory.resolve("assets").resolve(Music_Player.MOD_ID).resolve(id);
+        // 実際のサウンドパックの構造に合わせて、MOD_ID (music_player) の部分を削除します。
+        // これにより、例えば packDirectory が "soundpacks/dq_bgm" で id が "dq_bgm" の場合、
+        // "soundpacks/dq_bgm/assets/dq_bgm" というパスが返されるようになります。
+        return packDirectory.resolve("assets").resolve(id);
+    }
+
+    @Nullable
+    public ResourceLocation getIconLocation() { // アイコンのゲッター
+        return iconLocation;
+    }
+
+    public void setIconLocation(@Nullable ResourceLocation iconLocation) { // アイコンのセッター
+        this.iconLocation = iconLocation;
+    }
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;

@@ -3,5 +3,6 @@
   "gui.music_player.soundpack_selection.open_folder": "サウンドパックフォルダを開く",
   "gui.music_player.soundpack_selection.reload_packs": "サウンドパックを再読込",
   "gui.music_player.soundpack_selection.no_packs": "「soundpacks」フォルダにサウンドパックが見つかりません。",
-  "gui.music_player.open_soundpack_screen": "音楽プレイヤー パック設定"
+  "gui.music_player.open_soundpack_screen": "音楽プレイヤー パック設定",
+  "narrator.list.select": "選択中: %s"
 }

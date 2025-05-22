@@ -133,13 +133,13 @@ public class MusicConditionEvaluator {
             }
 
             // --- isNight Check ---
-            if (definition.isNight() != null && definition.isNight() != context.isNight) { // getterを使用
+            if (definition.isNight() != null && Boolean.TRUE.equals(definition.isNight()) != context.isNight) { // getterを使用
                 LOGGER.trace("Failed isNight check: required={}, current={}", definition.isNight(), context.isNight);
                 return false;
             }
 
             // --- inCombat Check ---
-            if (definition.isCombat() != null && definition.isCombat() != context.isInCombat) { // getterを使用
+            if (definition.isCombat() != null && Boolean.TRUE.equals(definition.isCombat()) != context.isInCombat) { // getterを使用
                 LOGGER.trace("Failed isCombat check: required={}, current={}", definition.isCombat(), context.isInCombat);
                 return false;
             }
@@ -165,15 +165,13 @@ public class MusicConditionEvaluator {
             }
 
             // --- inVillage Check ---
-            if (definition.isVillage() != null && definition.isVillage() != context.isInVillage) { // getterを使用
+            if (definition.isVillage() != null && Boolean.TRUE.equals(definition.isVillage()) != context.isInVillage) { // getterを使用
                 LOGGER.trace("Failed isVillage check: required={}, current={}", definition.isVillage(), context.isInVillage);
                 return false;
             }
 
             // --- Weather Check ---
             if (definition.getWeather() != null && !definition.getWeather().isEmpty()) { // getterを使用
-                // ... (definition.weather を definition.getWeather() に変更して同様のロジック) ...
-                // ログ出力の definition.soundEventLocation を logDefId に変更
                 boolean weatherMatchFound = false;
                 boolean currentlyThundering = context.isThundering;
                 boolean currentlyRainingOnly = context.isRaining && !context.isThundering;

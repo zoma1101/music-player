@@ -1,6 +1,8 @@
 {
-  "pack.source.mod": "Mod Pack" ,
-  "gui.music_player.soundpack_selection.title": "Sound Packs",
-  "gui.back": "Back",
-  "gui.music_player.open_soundpack_screen" : "Soundpack Screen"
+  "gui.music_player.soundpack_selection.title": "Soundpack Selection",
+  "gui.music_player.soundpack_selection.open_folder": "Open Soundpack Folder",
+  "gui.music_player.soundpack_selection.reload_packs": "Reload Soundpacks",
+  "gui.music_player.soundpack_selection.no_packs": "No soundpacks found in 'soundpacks' folder.",
+  "gui.music_player.open_soundpack_screen": "Music Player Pack Settings",
+  "narrator.list.select": "Selected: %s"
 }

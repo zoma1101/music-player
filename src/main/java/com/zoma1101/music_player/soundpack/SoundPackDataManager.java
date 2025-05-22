@@ -2,7 +2,6 @@ package com.zoma1101.music_player.soundpack; // パッケージは適宜調整�
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.logging.LogUtils;
@@ -19,11 +18,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static com.zoma1101.music_player.Music_Player.MOD_ID; // MOD_ID は適切に参照
@@ -48,11 +45,6 @@ public class SoundPackDataManager {
     // アクティブなサウンドパックのIDリスト (将来的には設定で管理)
     // 初期状態ではロードされた全てのパックをアクティブとして扱う
     private final List<String> activeSoundPackIds = new ArrayList<>();
-
-    public SoundPackDataManager() {
-        // コンストラクタでは特にロードは行わない
-        // ロードはクライアントセットアップイベントやリロードイベントで行う
-    }
 
     /**
      * soundpacks ディレクトリからサウンドパックを発見し、メタデータと音楽定義をロードします。

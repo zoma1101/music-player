@@ -1,7 +1,7 @@
 package com.zoma1101.music_player.client;
 
 
-import com.zoma1101.music_player.soundpack.SoundPack; // このインポートは Entry クラスで SoundPack を使うなら必要
+
 import com.zoma1101.music_player.sound.SoundPackInfo; // ★変更点1: SoundPackInfo をインポート
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -64,8 +64,6 @@ public class SoundPackList extends AbstractSelectionList<SoundPackList.Entry> {
             // Entry クラスで getNarration() メソッドが実装されていることを利用
             narrationElementOutput.add(NarratedElementType.POSITION, Component.translatable("narrator.list.select", this.getSelected().getNarration()));
         }
-        // 必要に応じて、リストの要素数などを追加することも可能
-        // narrationElementOutput.add(NarratedElementType.CONTENTS, Component.translatable("narrator.list.contents", this.getItemCount()));
     }
 
 
@@ -94,23 +92,35 @@ public class SoundPackList extends AbstractSelectionList<SoundPackList.Entry> {
 
         @Override
         public void render(@NotNull GuiGraphics guiGraphics, int index, int top, int left, int width, int height, int mouseX, int mouseY, boolean isHovering, float partialTicks) {
-            // チェックボックスの描画
-            ResourceLocation checkboxSprite = this.isCurrentlyActive ? CHECKBOX_SELECTED_SPRITE : CHECKBOX_UNSELECTED_SPRITE;
+            ResourceLocation iconToRender = this.packInfo.getIconLocation();
+            int iconSize = 32;
 
-            // GuiGraphics の blit メソッド (単一テクスチャ描画用) を使用
-            guiGraphics.blit(checkboxSprite, left + 2, top + (height - 16) / 2, 16, 16, 0, 0, 16, 16, 16, 16);
+            if (iconToRender != null) {
+                // アイコンを描画
+                guiGraphics.blit(iconToRender, left + 2, top + (height - iconSize) / 2, iconSize, iconSize, 0, 0, iconSize, iconSize, iconSize, iconSize);
 
+                // アクティブ状態を示すために枠線を描画する例
+                if (this.isCurrentlyActive) {
+                    // 内側の枠
+                    guiGraphics.renderOutline(left + 1, top + (height - iconSize) / 2 -1, iconSize + 2, iconSize + 2, 0xFFFFFFFF); // 白色
+                }
 
-            // サウンドパック名の描画
-            // packInfo.getId() は SoundPackInfo にも存在するので変更なし
+            } else {
+                // アイコンがない場合の代替表示 (例: 元のチェックボックス)
+                ResourceLocation checkboxSprite = this.isCurrentlyActive ? CHECKBOX_SELECTED_SPRITE : CHECKBOX_UNSELECTED_SPRITE;
+                guiGraphics.blit(checkboxSprite, left + 2, top + (height - 16) / 2, 16, 16, 0, 0, 16, 16, 16, 16);
+            }
+
+            // サウンドパック名の描画位置をアイコンの幅に合わせて調整
+            int textLeftOffset = left + 2 + iconSize + 4; // アイコンの右側に少しスペースを空ける
+
             MutableComponent packName = Component.literal(this.packInfo.getId());
-            guiGraphics.drawString(this.minecraft.font, packName, left + 22, top + 2, 0xFFFFFF);
+            int textColor = this.isCurrentlyActive ? 0xFFFF00 : 0xFFFFFF; // アクティブなら黄色(FFFF00)、非アクティブなら白(FFFFFF)
+            guiGraphics.drawString(this.minecraft.font, packName, textLeftOffset, top + 2, textColor);
 
-            // サウンドパックの説明の描画 (複数行対応)
-            // packInfo.getDescription() は SoundPackInfo にも存在するので変更なし
             Component description = this.packInfo.getDescription();
             if (description != null && !description.getString().isEmpty()) {
-                guiGraphics.drawString(this.minecraft.font, description, left + 22, top + 2 + this.minecraft.font.lineHeight + 2, 0xAAAAAA);
+                guiGraphics.drawString(this.minecraft.font, description, textLeftOffset, top + 2 + this.minecraft.font.lineHeight + 2, 0xAAAAAA);
             }
         }
 
@@ -130,6 +140,10 @@ public class SoundPackList extends AbstractSelectionList<SoundPackList.Entry> {
             // "narrator.select" は Minecraft の標準的な翻訳キー
             // packInfo.getId() は SoundPackInfo にも存在するので変更なし
             return Component.translatable("narrator.select", this.packInfo.getId());
+        }
+
+        public SoundPackList getList() {
+            return list;
         }
     }
 }
