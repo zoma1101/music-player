@@ -1,9 +1,9 @@
 package com.zoma1101.music_player;
 
 import com.mojang.logging.LogUtils;
-// Configクラスのパスを確認
-import com.zoma1101.music_player.sound.MusicDefinition; // 新しいMusicDefinition
-import com.zoma1101.music_player.util.MusicConditionEvaluator; // 評価クラス
+import com.zoma1101.music_player.config.ClientConfig; // ClientConfig をインポート
+import com.zoma1101.music_player.sound.MusicDefinition;
+import com.zoma1101.music_player.util.MusicConditionEvaluator;
 import net.minecraft.ResourceLocationException;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -46,10 +46,10 @@ public class ClientMusicManager {
             Minecraft mc = Minecraft.getInstance();
             LocalPlayer player = mc.player;
 
-            if (player != null && player.tickCount % CHECK_INTERVAL_TICKS == 0) {
+            if (player != null && mc.level != null && player.tickCount % CHECK_INTERVAL_TICKS == 0) { // mc.level != null チェックを追加
                 if (isRecordPlaying) {
-                    // レコードが再生中とマークされている場合、実際にまだ再生されているか確認
                     SoundManager soundManager = mc.getSoundManager();
+                    // レコードが再生中とマークされている場合、実際にまだ再生されているか確認
                     if (lastPlayedRecordInstance != null && !soundManager.isActive(lastPlayedRecordInstance)) {
                         LOGGER.info("Record music [{}] seems to have stopped. Resuming MOD music checks.", lastPlayedRecordInstance.getLocation());
                         isRecordPlaying = false;
@@ -60,7 +60,6 @@ public class ClientMusicManager {
                         updateMusic(); // MOD音楽の更新を試みる
                     } else if (lastPlayedRecordInstance == null) {
                         // lastPlayedRecordInstance が何らかの理由でnullだがisRecordPlayingがtrueの場合
-                        // (例えばログイン直後など、安全策としてフラグをリセット)
                         LOGGER.warn("isRecordPlaying is true, but lastPlayedRecordInstance is null. Resetting record state.");
                         isRecordPlaying = false;
                         updateMusic();
@@ -90,7 +89,10 @@ public class ClientMusicManager {
         currentMusicSoundEventKey = null;
         isRecordPlaying = false;
         lastPlayedRecordInstance = null;
-        updateMusic();
+        // ログイン直後はまだワールド情報が完全にロードされていない可能性があるため、
+        // updateMusic() は onClientTick で自然に呼び出されるのを待つ方が安全な場合がある。
+        // 必要であればここで呼び出すが、ログを見る限りTickEventで十分そう。
+        // updateMusic();
     }
 
     @SubscribeEvent
@@ -110,61 +112,83 @@ public class ClientMusicManager {
 
         ResourceLocation playingSoundEventLocation = soundBeingPlayed.getLocation();
         SoundSource soundSource = soundBeingPlayed.getSource();
+        String playingNamespace = playingSoundEventLocation.getNamespace();
 
-        // --- レコード再生の処理 ---
+        // --- 1. レコード (SoundSource.RECORDS) の処理 ---
+        // これには、バニラのジュークボックスと、他のMODがRECORDSソースで再生するBGMが含まれる可能性があります。
         if (SoundSource.RECORDS.equals(soundSource)) {
+            // Music Player自身のレコード再生はありえないので、これはバニラか他のMODのレコード
             if (!isRecordPlaying || (lastPlayedRecordInstance != null && !lastPlayedRecordInstance.getLocation().equals(playingSoundEventLocation))) {
-                // 新しいレコードが再生開始、または別のレコードに切り替わった
-                LOGGER.info("Record music [{}] started. Stopping MOD music.", playingSoundEventLocation);
+                LOGGER.info("Record-source music [{}] started.", playingSoundEventLocation);
                 isRecordPlaying = true;
                 lastPlayedRecordInstance = soundBeingPlayed; // 再生中のレコードインスタンスを保存
-                // MODの音楽が再生中であれば停止する
                 if (currentMusicInstance != null) {
+                    LOGGER.info("Stopping MOD music because a record-source sound started.");
                     stopMusic(true);
                     currentMusicSoundEventKey = null;
                 }
             }
-            // レコードの再生イベントはそのまま許可
+            // レコードソースの音は常に再生を許可 (Music PlayerがRECORDSで再生することはないため)
             return;
         }
 
-        // --- MODの音楽と他のMUSICソースの音楽の競合処理 ---
-        if (SoundSource.MUSIC.equals(soundSource)) {
-            String namespace = playingSoundEventLocation.getNamespace();
-            // レコード再生中はMOD音楽は再生されるべきではない
-            boolean modMusicShouldBePlaying = currentMusicSoundEventKey != null && !isRecordPlaying;
+        // --- 2. Music Player自身のBGM (SoundSource.MUSIC, Music_Player.MOD_IDネームスペース) の処理 ---
+        if (SoundSource.MUSIC.equals(soundSource) && Music_Player.MOD_ID.equals(playingNamespace)) {
+            // Music PlayerのBGMが再生されようとしている
+            if (isRecordPlaying) {
+                LOGGER.debug("[onPlaySound] MOD music [{}] tried to play while a record-source sound is active. Cancelling MOD music.", playingSoundEventLocation); // WARN -> DEBUG
+                event.setSound(null); // Music PlayerのBGMの再生をキャンセル
+                return;
+            }
 
-            if (Music_Player.MOD_ID.equals(namespace)) {
-                // 再生されようとしているのがMODの音楽の場合
-                MusicDefinition def = Music_Player.soundPackManager.getMusicDefinitionByEventKey(playingSoundEventLocation.getPath());
-                boolean isTheCorrectModMusic = def != null && currentMusicSoundEventKey != null && currentMusicSoundEventKey.equals(def.getSoundEventKey());
+            MusicDefinition def = Music_Player.soundPackManager.getMusicDefinitionByEventKey(playingSoundEventLocation.getPath());
+            boolean isTheCorrectModMusic = def != null && currentMusicSoundEventKey != null && currentMusicSoundEventKey.equals(def.getSoundEventKey());
 
-                if (isRecordPlaying) {
-                    LOGGER.warn("[onPlaySound] MOD music [{}] tried to play while a record is playing. Cancelling it.", playingSoundEventLocation);
-                    event.setSound(null); // MODの音楽の再生をキャンセル
-                    return;
-                }
-
-                if (isTheCorrectModMusic) {
-                    // 正しいMODの音楽
-                } else if (currentMusicSoundEventKey != null) {
+            if (isTheCorrectModMusic) {
+                // 正しいMusic PlayerのBGMなので、再生を許可
+                LOGGER.debug("[onPlaySound] Allowing correct MOD music to play: {}", playingSoundEventLocation);
+            } else {
+                // 間違ったMusic PlayerのBGM、または再生されるべきでないMusic PlayerのBGM
+                if (currentMusicSoundEventKey != null) {
                     LOGGER.warn("[onPlaySound] An incorrect MOD music [{}] was about to play. Expected key: [{}]. Cancelling it.", playingSoundEventLocation, currentMusicSoundEventKey);
-                    event.setSound(null);
                 } else {
                     LOGGER.warn("[onPlaySound] MOD music [{}] was about to play, but no MOD music should be playing. Cancelling it.", playingSoundEventLocation);
-                    event.setSound(null);
                 }
-
-            } else {
-                // 再生されようとしているのがMOD以外のMUSICソースの音楽 (例: バニラの音楽) の場合
-                if (modMusicShouldBePlaying) {
-                    LOGGER.info("[onPlaySound] MOD music should be playing (Key: {}). Cancelling other music: {}", currentMusicSoundEventKey, playingSoundEventLocation);
-                    event.setSound(null);
-                }
-                // バニラの音楽が再生されようとしていて、MODの音楽が再生されるべきでない場合は、そのまま再生を許可
+                event.setSound(null); // Music PlayerのBGMの再生をキャンセル
             }
+            return;
         }
-        // 他のSoundSource (効果音など) は影響を受けない
+
+        // --- 3. 他のMODまたはバニラのBGM (SoundSource.MUSIC, Music_Player.MOD_ID以外のネームスペース) の処理 ---
+        if (SoundSource.MUSIC.equals(soundSource)) {
+            // 他のMODまたはバニラのBGMが再生されようとしている
+            if (isRecordPlaying) {
+                // レコードソースの音がアクティブな場合、他のMUSICソースの音は基本的に許可しない (レコード優先)
+                LOGGER.debug("[onPlaySound] Another MUSIC-source sound [{}] tried to play while a record-source sound is active. Letting it play (or be handled by record logic).", playingSoundEventLocation); // DEBUG のまま
+                return; // 通常、レコード再生中は他のMUSICは再生されないはず
+            }
+
+            boolean modMusicShouldBePlaying = currentMusicSoundEventKey != null; // isRecordPlayingのチェックは上記で行った
+
+            if (ClientConfig.isOverride_BGM.get()) {
+                // オーバーライド設定が有効
+                if (modMusicShouldBePlaying) {
+                    LOGGER.info("[onPlaySound] Override enabled. MOD music should be playing (Key: {}). Cancelling other MUSIC-source sound: {}", currentMusicSoundEventKey, playingSoundEventLocation);
+                    event.setSound(null); // 他のMOD/バニラのBGMをキャンセル
+                } else {
+                    // Music PlayerのBGMが再生されるべきでないなら、他のMOD/バニラのBGMを許可
+                    LOGGER.debug("[onPlaySound] Override enabled, but no MOD music to play. Allowing other MUSIC-source sound: {}", playingSoundEventLocation);
+                }
+            } else {
+                // オーバーライド設定が無効なら、他のMOD/バニラのBGMを常に許可
+                LOGGER.debug("[onPlaySound] Override disabled. Allowing other MUSIC-source sound: {}", playingSoundEventLocation);
+            }
+            return;
+        }
+
+        // --- 4. その他のサウンドソース (効果音など) ---
+        // これらはMusic PlayerのBGMとは競合しないので、常に再生を許可
+        LOGGER.trace("[onPlaySound] Allowing non-MUSIC, non-RECORD sound: {} (Source: {})", playingSoundEventLocation, soundSource);
     }
 
     private static void updateMusic() {
@@ -222,14 +246,11 @@ public class ClientMusicManager {
             currentMusicSoundEventKey = targetSoundEventKey;
 
         } else {
-            SoundManager soundManager = mc.getSoundManager();
+            SoundManager soundManager = Minecraft.getInstance().getSoundManager();
             boolean shouldBePlaying = (currentMusicSoundEventKey != null);
-            // currentMusicInstance が null の場合でも soundManager.isActive は false を返すので安全
             boolean isActuallyPlaying = (currentMusicInstance != null && soundManager.isActive(currentMusicInstance));
 
-
             if (shouldBePlaying && !isActuallyPlaying) {
-                LOGGER.warn("Music for key [{}] should be playing but isn't active. Attempting to restart.", currentMusicSoundEventKey);
                 playMusicByKey(currentMusicSoundEventKey); // playMusicByKey内でisRecordPlayingチェックあり
             } else if (!shouldBePlaying && isActuallyPlaying) {
                 LOGGER.warn("Music should NOT be playing, but instance for key [{}] is active. Stopping.", currentMusicSoundEventKey);
@@ -291,8 +312,6 @@ public class ClientMusicManager {
             soundManager.stop(currentMusicInstance); // SoundManagerに停止を指示
             currentMusicInstance = null; // インスタンスの参照をクリア
         }
-        // currentMusicSoundEventKey はここではクリアしない。
-        // 音楽が「再生されるべきではない」と判断されたときにクリアされるべき。
         if (setStoppingFlag) {
             isStopping = true;
         }

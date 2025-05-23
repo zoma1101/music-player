@@ -2,6 +2,7 @@ package com.zoma1101.music_player;
 
 
 import com.mojang.logging.LogUtils;
+import com.zoma1101.music_player.config.ClientConfig;
 import com.zoma1101.music_player.sound.SoundPackManager;
 import net.minecraft.SharedConstants;
 import net.minecraft.world.flag.FeatureFlagSet;
@@ -14,6 +15,7 @@ import com.zoma1101.music_player.sound.ModSoundResourcePack; // ModSoundResource
 import net.minecraftforge.event.AddPackFindersEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
@@ -34,7 +36,7 @@ public class Music_Player {
         // ... (既存のコンストラクタ内の処理) ...
         IEventBus modEventBus = ctx.getModEventBus();
         modEventBus.register(this); // MODメインクラスをMODイベントバスに登録
-
+        ctx.registerConfig(ModConfig.Type.CLIENT, ClientConfig.SPEC);
         // イベントリスナーの登録
         modEventBus.addListener(this::commonSetup);
         modEventBus.addListener(this::clientSetup); // ClientSetupクラスの代わりにここで直接処理も可
