@@ -198,8 +198,6 @@ public class MusicConditionEvaluator {
 
             // --- Dimension Check ---
             if (definition.getDimensions() != null && !definition.getDimensions().isEmpty()) { // getterを使用
-                // ... (definition.dimensions を definition.getDimensions() に変更して同様のロジック) ...
-                // ログ出力の definition.soundEventLocation を logDefId に変更
                 if (context.dimensionId != null) {
                     String currentDimensionIdStr = context.dimensionId.toString();
                     boolean dimensionMatchFound = false;

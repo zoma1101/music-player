@@ -6,6 +6,8 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.npc.Villager;
+import net.minecraft.world.entity.vehicle.Boat; // Boatをインポート
+import net.minecraft.world.entity.vehicle.Minecart; // Minecartをインポート
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 
@@ -32,6 +34,7 @@ public class GameContextHelper {
 
     /**
      * プレイヤーの周囲の敵対Mobをチェックし、戦闘状態を更新して現在の戦闘状態を返します。
+     * 名札付きモブ、またはボートやトロッコに乗っているモブは戦闘状態のトリガーとしないように変更。
      * @param player 判定対象のプレイヤー
      * @param level プレイヤーがいるレベル
      * @return プレイヤーが戦闘状態にあるかどうか
@@ -52,7 +55,16 @@ public class GameContextHelper {
         );
 
         for (Mob mob : nearbyMobs) {
-            if (mob.isAggressive()) { // Mobが敵対的（攻撃対象を見つけているなど）か
+            // Mobがボートまたはトロッコに乗っているか確認
+            if (mob.isPassenger()) {
+                Entity vehicle = mob.getVehicle();
+                if (vehicle instanceof Boat || vehicle instanceof Minecart) {
+                    continue; // ボートまたはトロッコに乗っているMobは無視
+                }
+            }
+
+            // Mobが敵対的であり、かつ名札で名前が付けられていない場合
+            if (mob.isAggressive() && !mob.hasCustomName()) {
                 currentlyAggressiveIds.add(mob.getId()); // IDをリストに追加
             }
         }
@@ -62,13 +74,22 @@ public class GameContextHelper {
             activeCombatEntityIds.addAll(currentlyAggressiveIds);
         }
 
-        // 既存の追跡リストから、死亡した、無効になった、または範囲外に出たエンティティを削除
         Iterator<Integer> iterator = activeCombatEntityIds.iterator();
         while (iterator.hasNext()) {
             int entityId = iterator.next();
             Entity entity = level.getEntity(entityId); // IDからエンティティを取得
-            // エンティティが存在しない、生存していない、または戦闘チェック範囲外に出た場合
+
+            boolean shouldRemove = false;
             if (entity == null || !entity.isAlive() || entity.distanceToSqr(player) > COMBAT_CHECK_RADIUS * COMBAT_CHECK_RADIUS) {
+                shouldRemove = true;
+            } else if (entity instanceof Mob mobEntity) {
+                if (mobEntity.hasCustomName() ||
+                        (mobEntity.isPassenger() && (mobEntity.getVehicle() instanceof Boat || mobEntity.getVehicle() instanceof Minecart))) {
+                    shouldRemove = true;
+                }
+            }
+
+            if (shouldRemove) {
                 iterator.remove(); // リストから削除
             }
         }
@@ -90,26 +111,22 @@ public class GameContextHelper {
         BlockPos playerPos = player.blockPosition();
 
         // 一定範囲内のブロックをチェックし、鐘（BELLS）があるか探す
-        // BlockPos.betweenClosedStream は指定された2点の間の全ての整数座標を生成するストリーム
         boolean bellFound = BlockPos.betweenClosedStream(
-                playerPos.offset(-(int) VILLAGE_CHECK_RADIUS, -VILLAGE_CHECK_HEIGHT, -(int) VILLAGE_CHECK_RADIUS), // チェック範囲の開始座標
-                playerPos.offset((int) VILLAGE_CHECK_RADIUS, VILLAGE_CHECK_HEIGHT, (int) VILLAGE_CHECK_RADIUS) // チェック範囲の終了座標
-        ).anyMatch(pos -> level.getBlockState(pos.immutable()).is(Blocks.BELL)); // 各座標のブロックがBELLSかどうかをチェック
+                playerPos.offset(-(int) VILLAGE_CHECK_RADIUS, -VILLAGE_CHECK_HEIGHT, -(int) VILLAGE_CHECK_RADIUS),
+                playerPos.offset((int) VILLAGE_CHECK_RADIUS, VILLAGE_CHECK_HEIGHT, (int) VILLAGE_CHECK_RADIUS)
+        ).anyMatch(pos -> level.getBlockState(pos.immutable()).is(Blocks.BELL));
 
         if (bellFound) {
             return true; // 鐘があれば村の一部と見なす
         }
 
         // 一定範囲内に、設定されたしきい値以上の村人がいるかチェック
-        // 指定範囲内のエンティティを取得し、Villagerクラスかつ生存しているもののみを対象
         List<Villager> nearbyVillagers = level.getEntitiesOfClass(
                 Villager.class,
-                player.getBoundingBox().inflate(VILLAGE_CHECK_RADIUS), // プレイヤーのBoundingBoxを半径分膨らませた範囲
+                player.getBoundingBox().inflate(VILLAGE_CHECK_RADIUS),
                 LivingEntity::isAlive
         );
 
         return nearbyVillagers.size() >= VILLAGER_THRESHOLD;
     }
-
-    // 必要に応じて、他のゲームコンテキスト関連のヘルパーメソッド（例：特定の構造物内にいるかなど）を追加できます。
 }
