@@ -8,45 +8,37 @@ import java.nio.file.Path;
 import java.util.Objects;
 
 public class SoundPackInfo {
-    private final String internalId; // ディレクトリ名から生成されるID (例: dq_music_v1.00)
-    private final Component displayName; // ディレクトリ名そのもの (例: DQ Music v1.00)
-    private final String assetId;      // pack.mcmeta の "asset_id" から読み込むID (例: dq_bgm)
+    private final String internalId; // ディレクトリ名またはZIPファイル名から生成されるID
+    private final Component displayName; // 表示名 (ディレクトリ名またはZIPファイル名)
+    private final String assetId;      // assetsフォルダ直下のディレクトリ名 (自動検出)
     private final Component description;
-    private final Path packDirectory;
+    private final int packFormat;
+    private final Path packRootPath; // ディレクトリのパス、またはZipFileSystem内のルートパス
     @Nullable
-    private ResourceLocation iconLocation;
+    private ResourceLocation iconLocation; // music_player:<internalId>/pack.png
+    @Nullable
+    private Path iconFileSystemPath; // pack.pngへの実際のファイルシステムパス (ZipFS内も含む)
 
-    // コンストラクタを修正して assetId と displayName, packFormat を受け取る
-    public SoundPackInfo(String internalId, Component displayName, String assetId, Component description, Path packDirectory) {
+    public SoundPackInfo(String internalId, Component displayName, String assetId, Component description, int packFormat, Path packRootPath) {
         this.internalId = Objects.requireNonNull(internalId, "Internal ID cannot be null");
         this.displayName = Objects.requireNonNull(displayName, "Display name cannot be null");
         this.assetId = Objects.requireNonNull(assetId, "Asset ID cannot be null");
         if (assetId.isEmpty()) {
-            throw new IllegalArgumentException("Asset ID (from pack.mcmeta) cannot be empty");
+            throw new IllegalArgumentException("Asset ID (from assets sub-directory) cannot be empty");
         }
         this.description = Objects.requireNonNull(description, "Description cannot be null");
-        this.packDirectory = Objects.requireNonNull(packDirectory, "Pack directory cannot be null");
+        this.packFormat = packFormat;
+        this.packRootPath = Objects.requireNonNull(packRootPath, "Pack root path cannot be null");
     }
 
-    /**
-     * サウンドパックの内部的な識別ID（ディレクトリ名から生成）。
-     * UIでの選択やアクティブパックの管理に使用。
-     */
     public String getId() {
         return internalId;
     }
 
-    /**
-     * ユーザーに表示される名前（通常はサウンドパックのルートディレクトリ名）。
-     */
     public Component getDisplayName() {
         return displayName;
     }
 
-    /**
-     * pack.mcmeta の "asset_id" から読み込まれた、
-     * assets ディレクトリ以下の実際のフォルダ名として使用されるID。
-     */
     public String getAssetId() {
         return assetId;
     }
@@ -55,20 +47,20 @@ public class SoundPackInfo {
         return description;
     }
 
-
-    public Path getPackDirectory() {
-        return packDirectory;
+    public int getPackFormat() {
+        return packFormat;
     }
 
     /**
-     * このサウンドパックのアセット (conditions, sounds など) が格納されている
-     * assets ディレクトリのパスを返します。
-     * パス構造は "soundpacks/表示名/assets/アセットID/" となります。
-     * 例: soundpacks/DQ Music v1.00/assets/dq_bgm/
+     * サウンドパックのルートパスを返します。
+     * ディレクトリベースの場合はそのディレクトリのパス、ZIPベースの場合はZipFileSystem内のルートパスになります。
      */
+    public Path getPackRootPath() {
+        return packRootPath;
+    }
+
     public Path getAssetsDirectory() {
-        // assets フォルダの次のディレクトリ名に assetId (pack.mcmeta の asset_id) を使用します。
-        return packDirectory.resolve("assets").resolve(this.assetId);
+        return packRootPath.resolve("assets").resolve(this.assetId);
     }
 
     @Nullable
@@ -80,21 +72,30 @@ public class SoundPackInfo {
         this.iconLocation = iconLocation;
     }
 
+    @Nullable
+    public Path getIconFileSystemPath() {
+        return iconFileSystemPath;
+    }
+
+    public void setIconFileSystemPath(@Nullable Path iconFileSystemPath) {
+        this.iconFileSystemPath = iconFileSystemPath;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         SoundPackInfo that = (SoundPackInfo) o;
-        return internalId.equals(that.internalId); // 比較は internalId で行う
+        return internalId.equals(that.internalId);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(internalId); // ハッシュコードも internalId で生成
+        return Objects.hash(internalId);
     }
 
     @Override
     public String toString() {
-        return "SoundPackInfo{internalId='" + internalId + "', displayName='" + displayName.getString() + "', assetId='" + assetId + "', description='" + description.getString() + "'}";
+        return "SoundPackInfo{internalId='" + internalId + "', displayName='" + displayName.getString() + "', assetId='" + assetId + "'}";
     }
 }

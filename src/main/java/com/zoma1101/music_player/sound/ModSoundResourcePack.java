@@ -32,12 +32,11 @@ import java.util.concurrent.Executor;
 
 public class ModSoundResourcePack implements PackResources, PreparableReloadListener {
     private static final Logger LOGGER = LogUtils.getLogger();
-    private final String packId; // This is the ID of this ModSoundResourcePack instance itself, e.g., "music_player_soundpacks"
+    private final String packId;
     private String soundsJsonContent = "{}";
     private Map<ResourceLocation, Path> oggResourceMap = Collections.emptyMap();
 
     public static final ResourceLocation SOUNDS_JSON_RL = ResourceLocation.fromNamespaceAndPath(Music_Player.MOD_ID, "sounds.json");
-    // OGGリソースのResourceLocationパスのプレフィックス (SoundPackManagerと合わせる)
     private static final String OGG_RESOURCE_SOUNDS_PREFIX = "sounds/";
 
 
@@ -52,6 +51,8 @@ public class ModSoundResourcePack implements PackResources, PreparableReloadList
         return CompletableFuture.runAsync(() -> {
             preparationsProfiler.push("MusicPlayerSoundPackReloadPrepare");
             LOGGER.debug("[{}] Preparing Music Player sound pack data (prepare phase)...", packId);
+            // In previous iterations, SoundPackManager.discoverAndLoadPacks() was called here.
+            // Ensure that SoundPackManager's state is correctly managed if re-introducing that call.
             preparationsProfiler.pop();
         }, backgroundExecutor).thenCompose(stage::wait).thenRunAsync(() -> {
             reloadProfiler.push("MusicPlayerSoundPackReloadApply");
@@ -73,7 +74,7 @@ public class ModSoundResourcePack implements PackResources, PreparableReloadList
     public IoSupplier<InputStream> getRootResource(String @NotNull ... pathParts) {
         String joinedPath = String.join("/", pathParts);
         LOGGER.trace("[{}] getRootResource called for: {}", packId, joinedPath);
-        // 通常、MODのリソースパックではルートリソースはあまり使われない
+        // Typically, root resources are not heavily used in MOD resource packs.
         return null;
     }
 
@@ -83,29 +84,25 @@ public class ModSoundResourcePack implements PackResources, PreparableReloadList
         if (type != PackType.CLIENT_RESOURCES) {
             return null;
         }
-
-        final String currentPackId = this.packId(); // MODリソースパック自体のID
-
+        final String currentPackId = this.packId();
         if (!location.getNamespace().equals(Music_Player.MOD_ID)) {
-            // このリソースパックが扱う名前空間でなければ何もしない
             return null;
         }
-
         LOGGER.debug("[{}] getResource - ENTRY for: {}", currentPackId, location);
 
-        // 1. sounds.json の処理
+        // 1. sounds.json processing
         if (location.equals(SOUNDS_JSON_RL)) {
             LOGGER.debug("[{}] getResource - Handling SOUNDS.JSON request for: {}", currentPackId, location);
             if ("{}".equals(this.soundsJsonContent)) {
                 LOGGER.warn("[{}] getResource - SOUNDS.JSON was empty. FALLBACK: Regenerating data.", currentPackId);
-                // リロードが間に合わなかった場合などのフォールバックとして再生成を試みる
+                // Fallback to regenerate data if reload might not have completed in time.
                 this.soundsJsonContent = Music_Player.soundPackManager.generateSoundsJsonContent();
                 this.oggResourceMap = Music_Player.soundPackManager.getOggResourceMap();
                 LOGGER.debug("[{}] getResource - FALLBACK COMPLETE: sounds.json length: {}, ogg files: {}",
                         currentPackId, this.soundsJsonContent.length(), this.oggResourceMap.size());
             }
             try {
-                // デバッグ用に現在のsounds.jsonの内容をファイルに書き出す
+                // Write current sounds.json content to a debug file.
                 Path debugFile = Paths.get("debug_sounds_provided_by_modsoundresourcepack.json");
                 Files.writeString(debugFile, this.soundsJsonContent, StandardCharsets.UTF_8);
                 LOGGER.debug("[{}] Wrote current sounds.json content to {}", currentPackId, debugFile.toAbsolutePath());
@@ -115,20 +112,23 @@ public class ModSoundResourcePack implements PackResources, PreparableReloadList
             return () -> new ByteArrayInputStream(this.soundsJsonContent.getBytes(StandardCharsets.UTF_8));
         }
 
-        // 2. OGGファイルのリクエストか判定
-        // location.getPath() が "sounds/assetId/path/to/file.ogg" の形式になっているか確認
+        // 2. OGG file request determination
+        // The oggResourceMap can contain Paths within a ZipFS, which Files.newInputStream handles transparently.
         if (location.getPath().startsWith(OGG_RESOURCE_SOUNDS_PREFIX) && location.getPath().endsWith(".ogg")) {
             LOGGER.debug("[{}] getResource - OGG REQUEST identified for: {}", currentPackId, location);
             if (this.oggResourceMap == null || this.oggResourceMap.isEmpty()) {
                 LOGGER.warn("[{}] getResource - OGG REQUEST: oggResourceMap is null or empty for {}. Attempting to re-populate.", currentPackId, location);
-                this.oggResourceMap = Music_Player.soundPackManager.getOggResourceMap(); // 再取得を試みる
+                this.oggResourceMap = Music_Player.soundPackManager.getOggResourceMap(); // Attempt to re-fetch
                 LOGGER.debug("[{}] getResource - OGG REQUEST: oggResourceMap re-populated, new size: {}.", currentPackId, this.oggResourceMap.size());
             }
 
             if (this.oggResourceMap.containsKey(location)) {
                 Path oggPath = this.oggResourceMap.get(location);
-                LOGGER.debug("[{}] getResource - OGG REQUEST: Key FOUND in oggResourceMap for {}. Path: {}", currentPackId, location, oggPath);
-                if (Files.exists(oggPath) && Files.isRegularFile(oggPath)) {
+                // Added debug log to check FileSystem status
+                LOGGER.debug("[{}] getResource - OGG REQUEST: Key FOUND for {}. Path: {}, FileSystem: {}, IsOpen: {}",
+                        currentPackId, location, oggPath, oggPath.getFileSystem(), oggPath.getFileSystem().isOpen());
+
+                if (oggPath.getFileSystem().isOpen() && Files.exists(oggPath) && Files.isRegularFile(oggPath)) {
                     LOGGER.debug("[{}] getResource - OGG REQUEST: Providing file {} from {}", currentPackId, location, oggPath);
                     try {
                         return () -> Files.newInputStream(oggPath);
@@ -137,7 +137,7 @@ public class ModSoundResourcePack implements PackResources, PreparableReloadList
                         return null;
                     }
                 } else {
-                    LOGGER.error("[{}] getResource - OGG REQUEST: File in map but NOT FOUND or not a file: {} (expected at {})", currentPackId, location, oggPath);
+                    LOGGER.error("[{}] getResource - OGG REQUEST: File in map but NOT FOUND, not a file, or FileSystem closed: {} (expected at {}, FileSystem Open: {})", currentPackId, location, oggPath, oggPath.getFileSystem().isOpen());
                     return null;
                 }
             } else {
@@ -150,52 +150,42 @@ public class ModSoundResourcePack implements PackResources, PreparableReloadList
             }
         }
 
-        // 3. pack.png (アイコン) の処理
-        // SoundPackManagerで生成されたRLは music_player:<internalId>/pack.png の形式
+        // 3. pack.png (icon) processing
+        // The RL generated by SoundPackManager is in the format music_player:<internalId>/pack.png
         String requestedPath = location.getPath();
         if (requestedPath.endsWith("/pack.png")) {
-            // パスから internalId を抽出 (例: "dq_music_v1.00/pack.png" -> "dq_music_v1.00")
-            String packInternalIdFromRL = requestedPath.substring(0, requestedPath.lastIndexOf("/pack.png"));
+            // Find SoundPackInfo based on the icon's ResourceLocation
+            SoundPackInfo packInfo = Music_Player.soundPackManager.getLoadedSoundPacks().stream()
+                    .filter(spi -> spi.getIconLocation() != null && spi.getIconLocation().equals(location))
+                    .findFirst().orElse(null);
 
-            // internalId が空でないことを確認
-            if (!packInternalIdFromRL.isEmpty() && !packInternalIdFromRL.contains("/")) { // internalId自体にスラッシュが含まれていないことを確認
-                // packInternalIdFromRL を使って SoundPackInfo を検索
-                SoundPackInfo packInfo = Music_Player.soundPackManager.getLoadedSoundPacks().stream()
-                        .filter(spi -> spi.getId().equals(packInternalIdFromRL)) // getId() は internalId (dq_music_v1.00) を返す
-                        .findFirst().orElse(null);
-
-                if (packInfo != null) {
-                    // 元のディレクトリ名 (例: "DQ Music v1.00") を取得
-                    String actualPackDirectoryName = packInfo.getPackDirectory().getFileName().toString();
-                    Path iconDiskPath = SoundPackManager.SOUNDPACKS_BASE_DIR.resolve(actualPackDirectoryName).resolve("pack.png");
-
-                    LOGGER.debug("[{}] getResource - Pack Icon REQUEST identified for: {} (Derived InternalID: {}, Actual Dir: {}). Expected path: {}",
-                            currentPackId, location, packInternalIdFromRL, actualPackDirectoryName, iconDiskPath);
-
-                    if (Files.exists(iconDiskPath) && Files.isRegularFile(iconDiskPath)) {
-                        LOGGER.debug("[{}] getResource - Pack Icon REQUEST: Providing file {} from {}",
-                                currentPackId, location, iconDiskPath);
+            if (packInfo != null) {
+                Path iconPhysicalPath = packInfo.getIconFileSystemPath(); // Get physical path from SoundPackInfo
+                if (iconPhysicalPath != null) {
+                    LOGGER.debug("[{}] getResource - Pack Icon REQUEST for: {}. Using physical path: {}",
+                            currentPackId, location, iconPhysicalPath);
+                    if (iconPhysicalPath.getFileSystem().isOpen() && Files.exists(iconPhysicalPath) && Files.isRegularFile(iconPhysicalPath)) {
                         try {
-                            return () -> Files.newInputStream(iconDiskPath);
+                            return () -> Files.newInputStream(iconPhysicalPath);
                         } catch (Exception e) {
                             LOGGER.error("[{}] getResource - Pack Icon REQUEST: Error creating InputStream for {}: {}",
-                                    currentPackId, iconDiskPath, e.getMessage(), e);
+                                    currentPackId, iconPhysicalPath, e.getMessage(), e);
                             return null;
                         }
                     } else {
-                        LOGGER.warn("[{}] getResource - Pack Icon file not found on disk: {} (Expected at: {})",
-                                currentPackId, location, iconDiskPath);
+                        LOGGER.warn("[{}] getResource - Pack Icon file (from SoundPackInfo.iconFileSystemPath) not found, not a file, or FileSystem closed: {} (Path: {}, FileSystem Open: {})",
+                                currentPackId, location, iconPhysicalPath, iconPhysicalPath.getFileSystem().isOpen());
                         return null;
                     }
                 } else {
-                    LOGGER.warn("[{}] getResource - Pack Icon REQUEST: Could not find SoundPackInfo for InternalID: {}", currentPackId, packInternalIdFromRL);
+                    LOGGER.warn("[{}] getResource - Pack Icon REQUEST: SoundPackInfo found for {}, but its iconFileSystemPath is null.", currentPackId, location);
                 }
             } else {
-                LOGGER.warn("[{}] getResource - Pack Icon REQUEST: Could not derive a valid internalId from path: {}", currentPackId, requestedPath);
+                LOGGER.warn("[{}] getResource - Pack Icon REQUEST: Could not find SoundPackInfo for ResourceLocation: {}", currentPackId, location);
             }
         }
 
-        LOGGER.debug("[{}] getResource - Resource in our namespace NOT HANDLED (not sounds.json, OGG, or pack icon): {}", currentPackId, location);
+        LOGGER.debug("[{}] getResource - Resource in our namespace NOT HANDLED: {}", currentPackId, location);
         return null;
     }
 
@@ -205,15 +195,13 @@ public class ModSoundResourcePack implements PackResources, PreparableReloadList
         if (type != PackType.CLIENT_RESOURCES) {
             return;
         }
-
         final String currentPackId = this.packId();
-
         if (namespace.equals(Music_Player.MOD_ID)) {
             LOGGER.debug("[{}] listResources - Query received. Namespace: '{}', Path: '{}'",
                     currentPackId, namespace, path);
 
-            // 1. sounds.json のリストアップ
-            if (path.isEmpty() || SOUNDS_JSON_RL.getPath().startsWith(path)) { // pathが空か、sounds.jsonのパスで始まる場合
+            // 1. sounds.json listing
+            if (path.isEmpty() || SOUNDS_JSON_RL.getPath().startsWith(path)) {
                 if (!"{}".equals(this.soundsJsonContent) || path.isEmpty() || SOUNDS_JSON_RL.getPath().equals(path)) {
                     LOGGER.debug("[{}] listResources - Attempting to list {} for path query '{}'. Current soundsJsonContent length: {}",
                             currentPackId, SOUNDS_JSON_RL, path, this.soundsJsonContent.length());
@@ -222,8 +210,7 @@ public class ModSoundResourcePack implements PackResources, PreparableReloadList
                 }
             }
 
-            // 2. OGG ファイルのリストアップ
-            // pathが空か、"sounds" または "sounds/" で始まる場合
+            // 2. OGG file listing
             if (path.isEmpty() || path.equals(OGG_RESOURCE_SOUNDS_PREFIX.substring(0, OGG_RESOURCE_SOUNDS_PREFIX.length()-1)) || path.startsWith(OGG_RESOURCE_SOUNDS_PREFIX)) {
                 Map<ResourceLocation, Path> managerMap = Music_Player.soundPackManager.getOggResourceMap();
                 Map<ResourceLocation, Path> currentOggMapToUse = (managerMap != null && !managerMap.isEmpty()) ? managerMap : this.oggResourceMap;
@@ -239,18 +226,17 @@ public class ModSoundResourcePack implements PackResources, PreparableReloadList
                     Path oggDiskPath = entry.getValue();
 
                     if (!fullOggRl.getNamespace().equals(Music_Player.MOD_ID)) {
-                        continue; // 念のため名前空間をチェック
+                        continue;
                     }
-                    // fullOggRl.getPath() がクエリパス path で始まる場合にリストアップ
                     if (fullOggRl.getPath().startsWith(path)) {
-                        LOGGER.debug("[{}] listResources - Listing OGG: {} (for query path '{}')", currentPackId, fullOggRl, path);
+                        LOGGER.debug("[{}] listResources - Listing OGG: {} (for query path '{}', FileSystem Open: {})", currentPackId, fullOggRl, path, oggDiskPath.getFileSystem().isOpen());
                         resourceOutput.accept(fullOggRl, () -> {
                             try {
-                                if (Files.exists(oggDiskPath) && Files.isRegularFile(oggDiskPath)) {
+                                if (oggDiskPath.getFileSystem().isOpen() && Files.exists(oggDiskPath) && Files.isRegularFile(oggDiskPath)) {
                                     return Files.newInputStream(oggDiskPath);
                                 } else {
-                                    LOGGER.error("[{}] listResources - Listed OGG file not found on disk: {} (expected at {})", currentPackId, fullOggRl, oggDiskPath);
-                                    throw new FileNotFoundException("Listed OGG not found: " + oggDiskPath);
+                                    LOGGER.error("[{}] listResources - Listed OGG file not found on disk or FileSystem closed: {} (expected at {}, FileSystem Open: {})", currentPackId, fullOggRl, oggDiskPath, oggDiskPath.getFileSystem().isOpen());
+                                    throw new FileNotFoundException("Listed OGG not found or FileSystem closed: " + oggDiskPath);
                                 }
                             } catch (IOException e) {
                                 LOGGER.error("[{}] listResources - IOException for OGG {}: {}", currentPackId, fullOggRl, e.getMessage());
@@ -261,25 +247,22 @@ public class ModSoundResourcePack implements PackResources, PreparableReloadList
                 }
             }
 
-            // 3. pack.png (アイコン) のリストアップ
-            // SoundPackManagerで生成されたRLは music_player:<internalId>/pack.png
+            // 3. pack.png (icon) listing
             List<SoundPackInfo> loadedPacks = Music_Player.soundPackManager.getLoadedSoundPacks();
             for (SoundPackInfo packInfo : loadedPacks) {
                 ResourceLocation iconRl = packInfo.getIconLocation();
-                if (iconRl != null && iconRl.getNamespace().equals(Music_Player.MOD_ID) && iconRl.getPath().startsWith(path)) {
-                    // 元のディレクトリ名 (例: "DQ Music v1.00") を取得
-                    String actualPackDirectoryName = packInfo.getPackDirectory().getFileName().toString();
-                    Path iconDiskPath = SoundPackManager.SOUNDPACKS_BASE_DIR.resolve(actualPackDirectoryName).resolve("pack.png");
+                Path iconPhysicalPath = packInfo.getIconFileSystemPath(); // Get physical path from SoundPackInfo
 
-                    LOGGER.debug("[{}] listResources - Listing Pack Icon: {} (Actual Dir: {}, for query path '{}')",
-                            currentPackId, iconRl, actualPackDirectoryName, path);
+                if (iconRl != null && iconPhysicalPath != null && iconRl.getNamespace().equals(Music_Player.MOD_ID) && iconRl.getPath().startsWith(path)) {
+                    LOGGER.debug("[{}] listResources - Listing Pack Icon: {} (Physical Path: {}, for query path '{}', FileSystem Open: {})",
+                            currentPackId, iconRl, iconPhysicalPath, path, iconPhysicalPath.getFileSystem().isOpen());
                     resourceOutput.accept(iconRl, () -> {
                         try {
-                            if (Files.exists(iconDiskPath) && Files.isRegularFile(iconDiskPath)) {
-                                return Files.newInputStream(iconDiskPath);
+                            if (iconPhysicalPath.getFileSystem().isOpen() && Files.exists(iconPhysicalPath) && Files.isRegularFile(iconPhysicalPath)) {
+                                return Files.newInputStream(iconPhysicalPath);
                             } else {
-                                LOGGER.error("[{}] listResources - Listed Pack Icon file not found on disk: {} (expected at {})", currentPackId, iconRl, iconDiskPath);
-                                throw new FileNotFoundException("Listed Pack Icon not found: " + iconDiskPath);
+                                LOGGER.error("[{}] listResources - Listed Pack Icon file not found on disk or FileSystem closed: {} (expected at {}, FileSystem Open: {})", currentPackId, iconRl, iconPhysicalPath, iconPhysicalPath.getFileSystem().isOpen());
+                                throw new FileNotFoundException("Listed Pack Icon not found or FileSystem closed: " + iconPhysicalPath);
                             }
                         } catch (IOException e) {
                             LOGGER.error("[{}] listResources - IOException for Pack Icon {}: {}", currentPackId, iconRl, e.getMessage());
@@ -305,7 +288,7 @@ public class ModSoundResourcePack implements PackResources, PreparableReloadList
     @Override
     public <T> T getMetadataSection(@NotNull MetadataSectionSerializer<T> deserializer) {
         LOGGER.trace("[{}] getMetadataSection called for {}", packId(), deserializer.getMetadataSectionName());
-        // このリソースパックはpack.mcmetaを動的に提供しないため、nullを返す
+        // This resource pack does not dynamically provide pack.mcmeta, so return null.
         return null;
     }
 
@@ -316,12 +299,13 @@ public class ModSoundResourcePack implements PackResources, PreparableReloadList
 
     @Override
     public boolean isBuiltin() {
-        // このリソースパックはMODによって提供されるため、trueを返す
+        // This resource pack is provided by the MOD, so return true.
         return true;
     }
 
     @Override
     public void close() {
-        // リソースを解放する必要があればここで行う (今回は特に不要)
+        // ModSoundResourcePack itself does not open ZipFileSystems, so nothing to do here.
+        // Closing ZipFileSystems is handled by SoundPackManager.
     }
 }
