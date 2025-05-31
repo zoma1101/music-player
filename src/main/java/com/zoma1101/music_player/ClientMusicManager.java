@@ -1,7 +1,6 @@
 package com.zoma1101.music_player;
 
 import com.mojang.logging.LogUtils;
-import com.zoma1101.music_player.config.ClientConfig; // ClientConfig をインポート
 import com.zoma1101.music_player.sound.MusicDefinition;
 import com.zoma1101.music_player.util.MusicConditionEvaluator;
 import net.minecraft.ResourceLocationException;
@@ -148,12 +147,6 @@ public class ClientMusicManager {
                 // 正しいMusic PlayerのBGMなので、再生を許可
                 LOGGER.debug("[onPlaySound] Allowing correct MOD music to play: {}", playingSoundEventLocation);
             } else {
-                // 間違ったMusic PlayerのBGM、または再生されるべきでないMusic PlayerのBGM
-                if (currentMusicSoundEventKey != null) {
-                    LOGGER.warn("[onPlaySound] An incorrect MOD music [{}] was about to play. Expected key: [{}]. Cancelling it.", playingSoundEventLocation, currentMusicSoundEventKey);
-                } else {
-                    LOGGER.warn("[onPlaySound] MOD music [{}] was about to play, but no MOD music should be playing. Cancelling it.", playingSoundEventLocation);
-                }
                 event.setSound(null); // Music PlayerのBGMの再生をキャンセル
             }
             return;
@@ -164,31 +157,17 @@ public class ClientMusicManager {
             // 他のMODまたはバニラのBGMが再生されようとしている
             if (isRecordPlaying) {
                 // レコードソースの音がアクティブな場合、他のMUSICソースの音は基本的に許可しない (レコード優先)
-                LOGGER.debug("[onPlaySound] Another MUSIC-source sound [{}] tried to play while a record-source sound is active. Letting it play (or be handled by record logic).", playingSoundEventLocation); // DEBUG のまま
                 return; // 通常、レコード再生中は他のMUSICは再生されないはず
             }
 
             boolean modMusicShouldBePlaying = currentMusicSoundEventKey != null; // isRecordPlayingのチェックは上記で行った
 
-            if (ClientConfig.isOverride_BGM.get()) {
                 // オーバーライド設定が有効
-                if (modMusicShouldBePlaying) {
-                    LOGGER.info("[onPlaySound] Override enabled. MOD music should be playing (Key: {}). Cancelling other MUSIC-source sound: {}", currentMusicSoundEventKey, playingSoundEventLocation);
-                    event.setSound(null); // 他のMOD/バニラのBGMをキャンセル
-                } else {
-                    // Music PlayerのBGMが再生されるべきでないなら、他のMOD/バニラのBGMを許可
-                    LOGGER.debug("[onPlaySound] Override enabled, but no MOD music to play. Allowing other MUSIC-source sound: {}", playingSoundEventLocation);
-                }
-            } else {
-                // オーバーライド設定が無効なら、他のMOD/バニラのBGMを常に許可
-                LOGGER.debug("[onPlaySound] Override disabled. Allowing other MUSIC-source sound: {}", playingSoundEventLocation);
+            if (modMusicShouldBePlaying) {
+                LOGGER.info("[onPlaySound] Override enabled. MOD music should be playing (Key: {}). Cancelling other MUSIC-source sound: {}", currentMusicSoundEventKey, playingSoundEventLocation);
+                event.setSound(null); // 他のMOD/バニラのBGMをキャンセル
             }
-            return;
         }
-
-        // --- 4. その他のサウンドソース (効果音など) ---
-        // これらはMusic PlayerのBGMとは競合しないので、常に再生を許可
-        LOGGER.trace("[onPlaySound] Allowing non-MUSIC, non-RECORD sound: {} (Source: {})", playingSoundEventLocation, soundSource);
     }
 
     private static void updateMusic() {

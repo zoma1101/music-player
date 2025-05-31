@@ -2,7 +2,6 @@ package com.zoma1101.music_player;
 
 
 import com.mojang.logging.LogUtils;
-import com.zoma1101.music_player.config.ClientConfig;
 import com.zoma1101.music_player.sound.SoundPackManager;
 import net.minecraft.SharedConstants;
 import net.minecraft.world.flag.FeatureFlagSet;
@@ -15,8 +14,6 @@ import com.zoma1101.music_player.sound.ModSoundResourcePack; // ModSoundResource
 import net.minecraftforge.event.AddPackFindersEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.config.ModConfig;
-import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.slf4j.Logger;
@@ -36,49 +33,28 @@ public class Music_Player {
         // ... (既存のコンストラクタ内の処理) ...
         IEventBus modEventBus = ctx.getModEventBus();
         modEventBus.register(this); // MODメインクラスをMODイベントバスに登録
-        ctx.registerConfig(ModConfig.Type.CLIENT, ClientConfig.SPEC);
         // イベントリスナーの登録
         modEventBus.addListener(this::commonSetup);
-        modEventBus.addListener(this::clientSetup); // ClientSetupクラスの代わりにここで直接処理も可
         modEventBus.addListener(this::onRegisterClientReloadListeners); // ★ 既存のリスナー
         modEventBus.addListener(this::onAddPackFinders);               // ★ 新しいリスナー
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
-        LOGGER.info("Music Player: FMLCommonSetupEvent received.");
-        LOGGER.info("Music Player: Initiating synchronous sound pack discovery and loading during common setup...");
         soundPackManager.discoverAndLoadPacks();
-        LOGGER.info("Music Player: Synchronous sound pack discovery and loading complete during common setup.");
     }
 
-    private void clientSetup(final FMLClientSetupEvent event) {
-        // ClientSetupクラスで行っていた処理をここに移動するか、
-        // ClientSetupクラスの onClientSetup メソッドを static のまま維持し、
-        // Music_Player クラスのコンストラクタで modEventBus.register(ClientSetup.class); を行う。
-        // ここでは ClientSetup クラスは別途登録されている前提とします。
-        LOGGER.info("Music Player: FMLClientSetupEvent received (handled by Music_Player or ClientSetup class).");
-    }
-
-    // RegisterClientReloadListenersEvent のハンドラ
-    // @SubscribeEvent アノテーションは、MODイベントバスにクラスごと登録する場合にメソッドに付与
-    // addListenerで登録する場合は不要（ただし、付けても害はないことが多い）
     public void onRegisterClientReloadListeners(RegisterClientReloadListenersEvent event) {
-        LOGGER.info("Music Player: Registering Client Reload Listeners");
         if (modSoundResourcePackInstance == null) {
             modSoundResourcePackInstance = new ModSoundResourcePack(MOD_ID + "_soundpacks");
         }
         event.registerReloadListener(modSoundResourcePackInstance);
-        LOGGER.info("Registered ModSoundResourcePack as ReloadListener.");
     }
 
     // AddPackFindersEvent のハンドラ
     public void onAddPackFinders(AddPackFindersEvent event) {
         if (event.getPackType() == PackType.CLIENT_RESOURCES) {
-            LOGGER.info("Music Player: AddPackFindersEvent for CLIENT_RESOURCES received.");
-
             if (modSoundResourcePackInstance == null) {
                 modSoundResourcePackInstance = new ModSoundResourcePack(MOD_ID + "_soundpacks");
-                LOGGER.warn("Music Player: ModSoundResourcePack was null in onAddPackFinders, creating new instance. This might indicate an issue with event order if onRegisterClientReloadListeners wasn't called first.");
             }
 
             // Pack.Info を作成

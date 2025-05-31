@@ -12,13 +12,12 @@ public class SoundPackInfo {
     private final Component displayName; // ディレクトリ名そのもの (例: DQ Music v1.00)
     private final String assetId;      // pack.mcmeta の "asset_id" から読み込むID (例: dq_bgm)
     private final Component description;
-    private final int packFormat;
     private final Path packDirectory;
     @Nullable
     private ResourceLocation iconLocation;
 
     // コンストラクタを修正して assetId と displayName, packFormat を受け取る
-    public SoundPackInfo(String internalId, Component displayName, String assetId, Component description, int packFormat, Path packDirectory) {
+    public SoundPackInfo(String internalId, Component displayName, String assetId, Component description, Path packDirectory) {
         this.internalId = Objects.requireNonNull(internalId, "Internal ID cannot be null");
         this.displayName = Objects.requireNonNull(displayName, "Display name cannot be null");
         this.assetId = Objects.requireNonNull(assetId, "Asset ID cannot be null");
@@ -26,7 +25,6 @@ public class SoundPackInfo {
             throw new IllegalArgumentException("Asset ID (from pack.mcmeta) cannot be empty");
         }
         this.description = Objects.requireNonNull(description, "Description cannot be null");
-        this.packFormat = packFormat;
         this.packDirectory = Objects.requireNonNull(packDirectory, "Pack directory cannot be null");
     }
 
@@ -57,10 +55,6 @@ public class SoundPackInfo {
         return description;
     }
 
-    public int getPackFormat() {
-        return packFormat;
-    }
-    
 
     public Path getPackDirectory() {
         return packDirectory;

@@ -168,7 +168,6 @@ public class SoundPackManager {
                     Component.literal(directoryName),
                     assetId,                          // 例: "dq_bgm"
                     Component.literal(descriptionText),
-                    packFormat,
                     packRootDir
             );
 
