@@ -114,7 +114,7 @@ public class SoundPackList extends AbstractSelectionList<SoundPackList.Entry> {
             // サウンドパック名の描画位置をアイコンの幅に合わせて調整
             int textLeftOffset = left + 2 + iconSize + 4; // アイコンの右側に少しスペースを空ける
 
-            MutableComponent packName = Component.literal(this.packInfo.getId());
+            Component packName = this.packInfo.getDisplayName(); // ★修正後: getDisplayName() を使用★
             int textColor = this.isCurrentlyActive ? 0xFFFF00 : 0xFFFFFF; // アクティブなら黄色(FFFF00)、非アクティブなら白(FFFFFF)
             guiGraphics.drawString(this.minecraft.font, packName, textLeftOffset, top + 2, textColor);
 
