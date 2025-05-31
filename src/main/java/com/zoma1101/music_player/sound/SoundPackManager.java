@@ -380,7 +380,6 @@ public class SoundPackManager {
         return Collections.unmodifiableList(activeSoundPackIds);
     }
 
-    // ゲーム終了時などに呼び出すことを検討 (例: FMLClientStoppingEvent)
     public void onShutdown() {
         closeAllZipFileSystems();
     }

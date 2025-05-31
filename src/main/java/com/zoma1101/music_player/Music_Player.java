@@ -41,7 +41,7 @@ public class Music_Player {
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
-        // soundPackManager.discoverAndLoadPacks(); // ★この行を削除またはコメントアウト
+        soundPackManager.discoverAndLoadPacks(); // ★この行を削除またはコメントアウト
         LOGGER.info("Music_Player commonSetup: SoundPackManager initialization will occur during the first resource reload via ModSoundResourcePack.");
     }
 
