@@ -1,6 +1,7 @@
 package com.zoma1101.music_player.sound;
 
 import com.google.gson.*;
+import com.google.gson.reflect.TypeToken;
 import com.mojang.logging.LogUtils;
 import com.zoma1101.music_player.Music_Player;
 import net.minecraft.ResourceLocationException;
@@ -11,6 +12,8 @@ import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.io.Reader;
+import java.io.Writer;
+import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.ArrayList;
@@ -29,17 +32,19 @@ public class SoundPackManager {
     private static final String CONDITIONS_DIR_NAME = "conditions";
     private static final String OGG_RESOURCE_SOUNDS_PREFIX = "sounds/";
 
+    private static final Path CONFIG_DIR = Paths.get("config");
+    private static final String ACTIVE_PACKS_CONFIG_FILE_NAME = Music_Player.MOD_ID + "_active_packs.json";
+
     private final List<SoundPackInfo> loadedSoundPacks = new ArrayList<>();
     private final List<MusicDefinition> allMusicDefinitions = new ArrayList<>();
     private final Map<ResourceLocation, Path> oggResourceMap = new HashMap<>();
     private final Map<String, MusicDefinition> musicDefinitionByEventKey = new HashMap<>();
     private List<String> activeSoundPackIds = new ArrayList<>();
 
-    private final List<FileSystem> openZipFileSystems = new ArrayList<>(); // 開いているZipFileSystemを管理
+    private final List<FileSystem> openZipFileSystems = new ArrayList<>();
 
     public SoundPackManager() {
-        // Register a shutdown hook to close file systems, though FMLClientStoppingEvent might be better
-        // Runtime.getRuntime().addShutdownHook(new Thread(this::closeAllZipFileSystems));
+        // コンストラクタでの loadActivePacksConfig() 呼び出しは discoverAndLoadPacks に移動
     }
 
     private void closeAllZipFileSystems() {
@@ -60,13 +65,13 @@ public class SoundPackManager {
     public void discoverAndLoadPacks() {
         LOGGER.info("Discovering and loading sound packs from: {}", SOUNDPACKS_BASE_DIR.toAbsolutePath());
 
-        closeAllZipFileSystems(); // 前回のZipFileSystemを閉じる
-
+        // 1. まず全てのサウンドパックをスキャンしてロード
+        closeAllZipFileSystems();
         loadedSoundPacks.clear();
         allMusicDefinitions.clear();
         oggResourceMap.clear();
         musicDefinitionByEventKey.clear();
-        // activeSoundPackIdsはリロード間で保持
+        // activeSoundPackIds はこの時点ではクリアせず、後で設定ファイルから読み込む
 
         if (!Files.exists(SOUNDPACKS_BASE_DIR)) {
             try {
@@ -74,45 +79,103 @@ public class SoundPackManager {
                 LOGGER.info("Created soundpacks directory: {}", SOUNDPACKS_BASE_DIR.toAbsolutePath());
             } catch (IOException e) {
                 LOGGER.error("Failed to create soundpacks directory: {}", SOUNDPACKS_BASE_DIR.toAbsolutePath(), e);
-                return;
+                // return; // ここでリターンすると設定読み込みも行われないので注意
             }
         }
-        if (!Files.isDirectory(SOUNDPACKS_BASE_DIR)) {
+        if (Files.exists(SOUNDPACKS_BASE_DIR) && !Files.isDirectory(SOUNDPACKS_BASE_DIR)) {
             LOGGER.error("Soundpacks path exists but is not a directory: {}", SOUNDPACKS_BASE_DIR.toAbsolutePath());
-            return;
+            // return;
         }
 
-        // ディレクトリベースのサウンドパックをロード
-        try (Stream<Path> packDirs = Files.list(SOUNDPACKS_BASE_DIR)) {
-            packDirs.filter(Files::isDirectory).forEach(this::loadSingleDirectorySoundPack);
-        } catch (IOException e) {
-            LOGGER.error("Error listing sound pack directories in: {}", SOUNDPACKS_BASE_DIR.toAbsolutePath(), e);
+        if (Files.isDirectory(SOUNDPACKS_BASE_DIR)) { // ディレクトリが存在する場合のみスキャン
+            try (Stream<Path> packDirs = Files.list(SOUNDPACKS_BASE_DIR)) {
+                packDirs.filter(Files::isDirectory).forEach(this::loadSingleDirectorySoundPack);
+            } catch (IOException e) {
+                LOGGER.error("Error listing sound pack directories in: {}", SOUNDPACKS_BASE_DIR.toAbsolutePath(), e);
+            }
+
+            try (Stream<Path> zipFiles = Files.list(SOUNDPACKS_BASE_DIR)) {
+                zipFiles.filter(p -> p.toString().toLowerCase().endsWith(".zip") && Files.isRegularFile(p))
+                        .forEach(this::loadSingleZipSoundPack);
+            } catch (IOException e) {
+                LOGGER.error("Error listing sound pack ZIP files in: {}", SOUNDPACKS_BASE_DIR.toAbsolutePath(), e);
+            }
         }
+        LOGGER.info("Initial scan complete. Found {} potential sound packs.", loadedSoundPacks.size());
 
-        // ZIPファイルベースのサウンドパックをロード
-        try (Stream<Path> zipFiles = Files.list(SOUNDPACKS_BASE_DIR)) {
-            zipFiles.filter(p -> p.toString().toLowerCase().endsWith(".zip") && Files.isRegularFile(p))
-                    .forEach(this::loadSingleZipSoundPack);
-        } catch (IOException e) {
-            LOGGER.error("Error listing sound pack ZIP files in: {}", SOUNDPACKS_BASE_DIR.toAbsolutePath(), e);
-        }
+        // 2. 次に、設定ファイルから前回のアクティブなパックIDを読み込む
+        List<String> configuredActiveIds = loadActivePacksConfig(); // 読み込んだIDを一時変数に
 
-
-        if (!loadedSoundPacks.isEmpty() && activeSoundPackIds.isEmpty()) {
-            activeSoundPackIds.addAll(loadedSoundPacks.stream().map(SoundPackInfo::getId).toList());
-            LOGGER.info("Activated all loaded sound packs by default (using internalId): {}", activeSoundPackIds);
+        // 3. 最後に、読み込んだ設定とロードされたパック情報を照合
+        if (!loadedSoundPacks.isEmpty()) {
+            if (!configuredActiveIds.isEmpty()) {
+                // 設定ファイルにIDがあり、かつ実際にロードされたパックと照合
+                this.activeSoundPackIds = configuredActiveIds.stream()
+                        .filter(id -> loadedSoundPacks.stream().anyMatch(pack -> pack.getId().equals(id)))
+                        .collect(Collectors.toList());
+                LOGGER.info("Applied active sound packs from configuration: {}. (Valid against loaded: {})", configuredActiveIds, this.activeSoundPackIds);
+                if (configuredActiveIds.size() != this.activeSoundPackIds.size()) {
+                    LOGGER.warn("Some configured active packs were not found among loaded packs. Saving updated valid list.");
+                    saveActivePacksConfig(); // 有効なものだけになったので保存し直す
+                }
+            } else {
+                // 設定ファイルが空、または存在しなかった場合、ロードされた全パックをアクティブにする (初回起動など)
+                this.activeSoundPackIds = loadedSoundPacks.stream()
+                        .map(SoundPackInfo::getId)
+                        .collect(Collectors.toList());
+                LOGGER.info("No active packs in configuration or configuration not found. Activated all loaded sound packs by default: {}", this.activeSoundPackIds);
+                saveActivePacksConfig(); // デフォルトで有効化したので設定を保存
+            }
         } else {
-            List<String> validActiveIds = activeSoundPackIds.stream()
-                    .filter(id -> loadedSoundPacks.stream().anyMatch(pack -> pack.getId().equals(id)))
-                    .collect(Collectors.toList());
-            if (validActiveIds.size() != activeSoundPackIds.size()) {
-                LOGGER.info("Some previously active sound packs are no longer available. Updating active list.");
-                activeSoundPackIds = validActiveIds;
+            // ロードされたパックが一つもない場合
+            this.activeSoundPackIds.clear();
+            LOGGER.info("No sound packs loaded. Active sound pack list is empty.");
+            if (!configuredActiveIds.isEmpty()) {
+                // 設定にはあったがパックがロードされなかった場合、設定をクリアして保存
+                LOGGER.warn("Configured active packs {} found, but no packs were loaded. Clearing and saving configuration.", configuredActiveIds);
+                saveActivePacksConfig();
             }
         }
 
-        LOGGER.info("Finished loading sound packs. Found {} packs, {} music definitions, {} ogg resources.",
-                loadedSoundPacks.size(), allMusicDefinitions.size(), oggResourceMap.size());
+        LOGGER.info("Finished processing sound packs. Loaded: {} packs, {} music definitions, {} ogg resources. Active packs: {}",
+                loadedSoundPacks.size(), allMusicDefinitions.size(), oggResourceMap.size(), this.activeSoundPackIds);
+    }
+
+    private List<String> loadActivePacksConfig() { // 戻り値をList<String>に変更
+        Path configFile = CONFIG_DIR.resolve(ACTIVE_PACKS_CONFIG_FILE_NAME);
+        List<String> loadedIds = new ArrayList<>(); // ここで初期化
+        if (Files.exists(configFile) && Files.isRegularFile(configFile)) {
+            try (Reader reader = Files.newBufferedReader(configFile, StandardCharsets.UTF_8)) {
+                Type listType = new TypeToken<ArrayList<String>>() {}.getType();
+                List<String> parsedIds = GSON.fromJson(reader, listType);
+                if (parsedIds != null) {
+                    loadedIds.addAll(parsedIds);
+                    LOGGER.info("Loaded active sound pack configuration from {}: {}", configFile.toAbsolutePath(), loadedIds);
+                } else {
+                    LOGGER.warn("Could not parse active sound pack configuration from {}. File might be empty or malformed.", configFile.toAbsolutePath());
+                }
+            } catch (IOException | JsonParseException e) {
+                LOGGER.error("Failed to read or parse active sound pack configuration file: {}", configFile.toAbsolutePath(), e);
+            }
+        } else {
+            LOGGER.info("Active sound pack configuration file not found at {}. No packs will be active by default initially.", configFile.toAbsolutePath());
+        }
+        return loadedIds; // 読み込んだIDのリスト（空かもしれない）を返す
+    }
+
+    private void saveActivePacksConfig() {
+        Path configFile = CONFIG_DIR.resolve(ACTIVE_PACKS_CONFIG_FILE_NAME);
+        try {
+            if (!Files.exists(CONFIG_DIR)) {
+                Files.createDirectories(CONFIG_DIR);
+            }
+            try (Writer writer = Files.newBufferedWriter(configFile, StandardCharsets.UTF_8)) {
+                GSON.toJson(this.activeSoundPackIds, writer); // 保存するのは現在の SoundPackManager の activeSoundPackIds
+                LOGGER.info("Saved active sound pack configuration to {}: {}", configFile.toAbsolutePath(), this.activeSoundPackIds);
+            }
+        } catch (IOException e) {
+            LOGGER.error("Failed to save active sound pack configuration file: {}", configFile.toAbsolutePath(), e);
+        }
     }
 
     private void loadSingleDirectorySoundPack(Path packRootDir) {
@@ -123,12 +186,12 @@ public class SoundPackManager {
 
     private void loadSingleZipSoundPack(Path zipFilePath) {
         String zipFileName = zipFilePath.getFileName().toString();
-        String displayName = zipFileName.substring(0, zipFileName.lastIndexOf('.')); //拡張子 .zip を除去
+        String displayName = zipFileName.substring(0, zipFileName.lastIndexOf('.'));
         LOGGER.info("Processing ZIP sound pack: '{}' (from file: {})", displayName, zipFileName);
         try {
             FileSystem zipFs = FileSystems.newFileSystem(zipFilePath, Collections.emptyMap());
-            this.openZipFileSystems.add(zipFs); // 管理リストに追加
-            Path packRootInZip = zipFs.getPath("/"); // ZIP内のルート
+            this.openZipFileSystems.add(zipFs);
+            Path packRootInZip = zipFs.getPath("/");
             loadSingleSoundPackLogic(packRootInZip, displayName, true);
         } catch (ProviderNotFoundException e) {
             LOGGER.error("  ZIP file system provider not found for {}. This should not happen with standard Java.", zipFilePath, e);
@@ -209,12 +272,12 @@ public class SoundPackManager {
                     assetId,
                     Component.literal(descriptionText),
                     packFormat,
-                    packRootPathInFs // SoundPackInfoにはZipFS内のルートパスまたはディレクトリパスを渡す
+                    packRootPathInFs
             );
 
             Path iconPhysicalPath = packRootPathInFs.resolve("pack.png");
             if (Files.exists(iconPhysicalPath) && Files.isRegularFile(iconPhysicalPath)) {
-                soundPackInfo.setIconFileSystemPath(iconPhysicalPath); // 物理パスを保存
+                soundPackInfo.setIconFileSystemPath(iconPhysicalPath);
                 try {
                     ResourceLocation iconRl = ResourceLocation.fromNamespaceAndPath(Music_Player.MOD_ID, internalId + "/pack.png");
                     soundPackInfo.setIconLocation(iconRl);
@@ -226,7 +289,7 @@ public class SoundPackManager {
                 LOGGER.info("  No pack.png found for pack (InternalID '{}') at: {}", internalId, iconPhysicalPath);
             }
 
-            loadedSoundPacks.add(soundPackInfo);
+            loadedSoundPacks.add(soundPackInfo); // ここで loadedSoundPacks に追加
             LOGGER.info("  Loaded SoundPack: DisplayName='{}', AssetID='{}' (auto-detected), Format: {}, InternalID='{}', IsZip: {}",
                     baseDisplayName, soundPackInfo.getAssetId(), packFormat, internalId, isZip);
 
@@ -238,6 +301,7 @@ public class SoundPackManager {
             return;
         }
 
+        // MusicDefinitionのロードはSoundPackInfoが確定した後
         LOGGER.debug("  SoundPackInfo for conditions: InternalID='{}', AssetID='{}', PackRoot='{}'",
                 soundPackInfo.getId(), soundPackInfo.getAssetId(), soundPackInfo.getPackRootPath());
         Path conditionsDir = soundPackInfo.getAssetsDirectory().resolve(CONDITIONS_DIR_NAME);
@@ -271,7 +335,7 @@ public class SoundPackManager {
                         jsonPath.getFileName(), definition.getMusicFileInPack(), absoluteOggPath);
                 return;
             }
-            definition.setAbsoluteOggPath(absoluteOggPath); // このPathはZipFS内のPathかもしれない
+            definition.setAbsoluteOggPath(absoluteOggPath);
 
             String assetId = soundPackInfo.getAssetId();
             String relativeOggPathFromPackAssets = definition.getMusicFileInPack();
@@ -284,7 +348,7 @@ public class SoundPackManager {
 
                 String mapKeyPath = OGG_RESOURCE_SOUNDS_PREFIX + soundEventKey + ".ogg";
                 ResourceLocation mapKeyRL = ResourceLocation.fromNamespaceAndPath(Music_Player.MOD_ID, mapKeyPath);
-                oggResourceMap.put(mapKeyRL, absoluteOggPath); // ここもZipFS内のPathを格納
+                oggResourceMap.put(mapKeyRL, absoluteOggPath);
 
                 if (definition.isValid()) {
                     allMusicDefinitions.add(definition);
@@ -372,8 +436,9 @@ public class SoundPackManager {
     }
 
     public void setActiveSoundPackIds(List<String> ids) {
-        this.activeSoundPackIds = new ArrayList<>(ids);
-        LOGGER.info("Active sound packs updated (based on internalId): {}", this.activeSoundPackIds);
+        this.activeSoundPackIds = new ArrayList<>(ids); // UIからの変更を直接反映
+        LOGGER.info("Active sound packs updated by UI (based on internalId): {}", this.activeSoundPackIds);
+        saveActivePacksConfig(); // UIからの変更は即座に保存
     }
 
     public List<String> getActiveSoundPackIds() {
