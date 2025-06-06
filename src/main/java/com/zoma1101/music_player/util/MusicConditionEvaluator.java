@@ -21,6 +21,7 @@ import org.slf4j.Logger;
 import javax.annotation.Nullable;
 import java.util.*;
 import java.util.function.Predicate;
+// import java.util.stream.Collectors; // .toList() を使用する場合は不要な場合があるが、明示的に追加しても良い
 
 public class MusicConditionEvaluator {
 
@@ -132,7 +133,7 @@ public class MusicConditionEvaluator {
                 else if (requiredGui.equalsIgnoreCase("inventory") && context.currentGui instanceof InventoryScreen) guiMatch = true;
                 else if (requiredGui.equalsIgnoreCase("furnace") && context.currentGui instanceof FurnaceScreen) guiMatch = true;
                 else if (requiredGui.equalsIgnoreCase("brewing_stand") && context.currentGui instanceof BrewingStandScreen) guiMatch = true;
-                else if (requiredGui.equalsIgnoreCase("chest") && (context.currentGui instanceof ContainerScreen || context.currentGui instanceof ShulkerBoxScreen)) guiMatch = true;
+                else if (requiredGui.equalsIgnoreCase("chest") && (context.currentGui instanceof ContainerScreen || context.currentGui instanceof ShulkerBoxScreen)) guiMatch = true; // ContainerScreen は ChestScreen の親クラスの一つ
                 else if (requiredGui.equalsIgnoreCase("creative") && context.currentGui instanceof CreativeModeInventoryScreen) guiMatch = true;
                 else if ((requiredGui.equalsIgnoreCase("null") || requiredGui.equalsIgnoreCase("none")) && context.currentGui == null) guiMatch = true;
 
@@ -214,15 +215,16 @@ public class MusicConditionEvaluator {
 
                 List<String> includeConditions = entityConditions.stream()
                         .filter(s -> s != null && !s.startsWith("!"))
-                        .toList();
+                        .toList(); // Java 16+
                 List<String> excludeConditions = entityConditions.stream()
                         .filter(s -> s != null && s.startsWith("!"))
                         .map(s -> s.substring(1))
-                        .toList();
+                        .toList(); // Java 16+
 
                 Predicate<EntityType<?>> typeMatchesInclude = type -> {
-                    if (includeConditions.isEmpty()) return true;
+                    if (includeConditions.isEmpty()) return true; // No specific entities to include, so all pass this part of the check (exclusion still applies)
                     ResourceLocation typeRL = EntityType.getKey(type);
+
                     for (String includeIdOrTag : includeConditions) {
                         if (includeIdOrTag.startsWith("#")) {
                             try {
@@ -245,12 +247,14 @@ public class MusicConditionEvaluator {
                 };
 
                 Predicate<EntityType<?>> typeMatchesExclude = type -> {
-                    if (excludeConditions.isEmpty()) return false;
+                    if (excludeConditions.isEmpty()) return false; // No entities to exclude
                     ResourceLocation typeRL = EntityType.getKey(type);
+
                     for (String excludeIdOrTag : excludeConditions) {
+                        // excludeIdOrTag already has "!" removed
                         if (excludeIdOrTag.startsWith("#")) {
                             try {
-                                ResourceLocation tagRL = ResourceLocation.parse(excludeIdOrTag); // Already removed "!"
+                                ResourceLocation tagRL = ResourceLocation.parse(excludeIdOrTag.substring(1)); // Remove # for tag path
                                 TagKey<EntityType<?>> tagKey = TagKey.create(Registries.ENTITY_TYPE, tagRL);
                                 if (type.is(tagKey)) return true;
                             } catch (ResourceLocationException e) {
@@ -258,7 +262,7 @@ public class MusicConditionEvaluator {
                             }
                         } else {
                             try {
-                                ResourceLocation idRL = ResourceLocation.parse(excludeIdOrTag); // Already removed "!"
+                                ResourceLocation idRL = ResourceLocation.parse(excludeIdOrTag);
                                 if (typeRL.equals(idRL)) return true;
                             } catch (ResourceLocationException e) {
                                 LOGGER.warn("Invalid exclude entity ID format in definition [{}]: '{}'", logDefId, excludeIdOrTag);
@@ -269,24 +273,51 @@ public class MusicConditionEvaluator {
                 };
 
                 List<Entity> entitiesInRadius = level.getEntities(
-                        (Entity) null,
+                        (Entity) null, // Search for all entity types
                         player.getBoundingBox().inflate(radius),
-                        Entity::isAlive
+                        Entity::isAlive // Filter for living entities
                 );
 
                 int count = 0;
+                List<String> countedEntityInfo = new ArrayList<>(); // ★ログ出力用リスト
+
                 for (Entity entity : entitiesInRadius) {
                     EntityType<?> entityType = entity.getType();
                     boolean matchesInclude = typeMatchesInclude.test(entityType);
                     boolean matchesExclude = typeMatchesExclude.test(entityType);
-                    boolean shouldCount = (includeConditions.isEmpty() ? !matchesExclude : matchesInclude && !matchesExclude);
+
+                    boolean shouldCount = matchesInclude && !matchesExclude;
+
                     if (shouldCount) {
                         count++;
+                        // ★カウントされたエンティティの情報をリストに追加
+                        ResourceLocation entityKey = EntityType.getKey(entityType);
+                        String entityRegName = entityKey.toString();
+                        countedEntityInfo.add(
+                                String.format("%s (ID: %s, Pos: %s)",
+                                        entity.getName().getString(), // 表示名
+                                        entityRegName,                // レジストリ名
+                                        entity.blockPosition() // 位置
+                                ));
                     }
                 }
 
-                boolean currentConditionMet = minCount == null || count >= minCount;
-                if (maxCount != null && count > maxCount) {
+                // ★カウントされたエンティティの情報をログに出力 (TRACEレベル)
+                if (!countedEntityInfo.isEmpty()) {
+                    LOGGER.trace("[{}] Entities counted towards condition ({}): {}",
+                            logDefId,
+                            entityConditions, // どのentity_conditionsかを示す
+                            countedEntityInfo
+                    );
+                } else if (count == 0 && !includeConditions.isEmpty()){ // 含むべきものが指定されているのに0件だった場合
+                    LOGGER.trace("[{}] No entities matched the include/exclude criteria for conditions ({}). Found in radius: {}",
+                            logDefId, entityConditions, entitiesInRadius.size());
+                }
+
+
+                boolean currentConditionMet = minCount == null || count >= minCount; // Assume true initially
+
+                if (currentConditionMet && maxCount != null && count > maxCount) { // Only check maxCount if minCount (or no minCount) was met
                     currentConditionMet = false;
                 }
 
@@ -298,6 +329,7 @@ public class MusicConditionEvaluator {
                             count);
                     return false;
                 } else {
+                    // このログは、min/max count条件も満たした場合に出力される
                     LOGGER.trace("Entity condition MET for {}: Required Entities={}, Radius={}, RequiredMin={}, RequiredMax={}, FoundCount={}",
                             logDefId, entityConditions, radius,
                             minCount != null ? minCount : "N/A",
@@ -305,6 +337,7 @@ public class MusicConditionEvaluator {
                             count);
                 }
             } else if (radius != null || minCount != null || maxCount != null) {
+                // entityConditions がないのに radius や count が指定されているのは不正
                 LOGGER.warn("Invalid entity condition configuration for {}: entity_conditions list is empty/null but radius/min/max is specified.", logDefId);
                 return false;
             }
@@ -314,7 +347,7 @@ public class MusicConditionEvaluator {
 
         } catch (Exception e) {
             LOGGER.error("Error checking conditions for definition [{}]: {}", logDefId, e.getMessage(), e);
-            return false;
+            return false; // エラー発生時は条件不一致として扱う
         }
     }
 
