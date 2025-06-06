@@ -172,8 +172,6 @@ public class MusicDefinition {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         MusicDefinition that = (MusicDefinition) o;
-        // soundEventKey が null の場合も考慮し、他の主要なフィールドも比較対象に含めることを検討
-        // 現状は soundEventKey のみで比較
         return Objects.equals(soundEventKey, that.soundEventKey);
     }
 
