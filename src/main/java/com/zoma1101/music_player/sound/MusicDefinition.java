@@ -1,7 +1,8 @@
-package com.zoma1101.music_player.sound; // 新しいパッケージ構造を推奨
+package com.zoma1101.music_player.sound;
 
 import com.google.gson.annotations.SerializedName;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.ResourceLocationException; // ResourceLocationException をインポート
 import org.jetbrains.annotations.Nullable;
 
 import java.nio.file.Path;
@@ -44,6 +45,19 @@ public class MusicDefinition {
     @SerializedName("dimensions")
     @Nullable public List<String> dimensions = null;
 
+    // --- エンティティ条件用のトップレベルフィールド ---
+    @SerializedName("entity_conditions")
+    @Nullable public List<String> entityConditions = null; // エンティティIDまたはタグのリスト (例: ["minecraft:zombie", "#minecraft:raiders", "!minecraft:bat"])
+
+    @SerializedName("radius")
+    @Nullable public Double radius = null;
+
+    @SerializedName("min_count")
+    @Nullable public Integer minCount = null;
+
+    @SerializedName("max_count")
+    @Nullable public Integer maxCount = null; // nullの場合は上限なし
+
     // --- ロード処理中に設定される内部フィールド ---
     private transient String soundPackId; // この定義が属するSoundPackのID
     private transient Path absoluteOggPath; // OGGファイルの絶対パス
@@ -70,6 +84,11 @@ public class MusicDefinition {
     @Nullable public String getGuiScreen() { return guiScreen; }
     @Nullable public List<String> getWeather() { return weather; }
     @Nullable public List<String> getDimensions() { return dimensions; }
+    @Nullable public List<String> getEntityConditions() { return entityConditions; }
+    @Nullable public Double getRadius() { return radius; }
+    @Nullable public Integer getMinCount() { return minCount; }
+    @Nullable public Integer getMaxCount() { return maxCount; }
+
 
     public String getSoundPackId() { return soundPackId; }
     public String getSoundEventKey() { return soundEventKey; }
@@ -83,12 +102,45 @@ public class MusicDefinition {
 
 
     public boolean isValid() {
-        return priority >= 0 &&
-                musicFileInPack != null && !musicFileInPack.isBlank() &&
-                soundPackId != null && !soundPackId.isBlank() &&
-                absoluteOggPath != null &&
-                soundEventKey != null && !soundEventKey.isBlank() &&
-                oggResourceLocation != null;
+        // 基本的なフィールドのチェック
+        if (priority < 0 ||
+                musicFileInPack == null || musicFileInPack.isBlank() ||
+                soundPackId == null || soundPackId.isBlank() ||
+                absoluteOggPath == null ||
+                soundEventKey == null || soundEventKey.isBlank() ||
+                oggResourceLocation == null) {
+            return false;
+        }
+
+        // エンティティ条件の妥当性チェック
+        if (entityConditions != null && !entityConditions.isEmpty()) {
+            // entityConditions が指定されている場合、radius は必須
+            if (radius == null || radius <= 0) return false;
+            // minCount, maxCount の基本的なバリデーション
+            if (minCount != null && minCount < 0) return false;
+            if (maxCount != null && maxCount < 0) return false;
+            if (minCount != null && maxCount != null && minCount > maxCount) return false;
+
+            // entityConditions リスト内の各要素の形式チェック
+            for (String entityIdOrTag : entityConditions) {
+                if (entityIdOrTag == null || entityIdOrTag.isBlank()) return false; // 空の要素は無効
+                String checkString = entityIdOrTag;
+                if (checkString.startsWith("!")) {
+                    if (checkString.length() == 1) return false; // "!" だけは無効
+                    checkString = checkString.substring(1);
+                }
+                if (checkString.startsWith("#")) {
+                    if (checkString.length() == 1) return false; // "#" だけは無効
+                    // checkString = checkString.substring(1); // タグの場合、#以降をパース
+                }
+                try {
+                    ResourceLocation.parse(checkString.startsWith("#") ? checkString.substring(1) : checkString);
+                } catch (ResourceLocationException e) {
+                    return false;
+                }
+            }
+        } else return radius == null && minCount == null && maxCount == null;
+        return true;
     }
 
     @Override
@@ -99,6 +151,19 @@ public class MusicDefinition {
                 ", priority=" + priority +
                 ", soundEventKey='" + soundEventKey + '\'' +
                 ", oggResourceLocation=" + oggResourceLocation +
+                ", biomes=" + biomes +
+                ", isNight=" + isNight +
+                ", isCombat=" + isCombat +
+                ", isVillage=" + isVillage +
+                ", minY=" + minY +
+                ", maxY=" + maxY +
+                ", guiScreen='" + guiScreen + '\'' +
+                ", weather=" + weather +
+                ", dimensions=" + dimensions +
+                ", entityConditions=" + entityConditions +
+                ", radius=" + radius +
+                ", minCount=" + minCount +
+                ", maxCount=" + maxCount +
                 '}';
     }
 
@@ -107,7 +172,9 @@ public class MusicDefinition {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         MusicDefinition that = (MusicDefinition) o;
-        return Objects.equals(soundEventKey, that.soundEventKey); // soundEventKey で一意性を担保
+        // soundEventKey が null の場合も考慮し、他の主要なフィールドも比較対象に含めることを検討
+        // 現状は soundEventKey のみで比較
+        return Objects.equals(soundEventKey, that.soundEventKey);
     }
 
     @Override

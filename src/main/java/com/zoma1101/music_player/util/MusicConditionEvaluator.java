@@ -3,6 +3,7 @@ package com.zoma1101.music_player.util;
 import com.mojang.logging.LogUtils;
 import com.zoma1101.music_player.sound.MusicDefinition;
 import net.minecraft.ResourceLocationException;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.*;
 import net.minecraft.client.player.LocalPlayer;
@@ -11,88 +12,62 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
 import org.slf4j.Logger;
 
 import javax.annotation.Nullable;
 import java.util.*;
+import java.util.function.Predicate;
 
-/**
- * サウンド再生条件の評価とゲーム状況の収集を行うクラス。
- */
 public class MusicConditionEvaluator {
 
-    // ロギングのためのLOGGERを新しく定義
     private static final Logger LOGGER = LogUtils.getLogger();
 
-    // コンストラクタを隠蔽（静的メソッドのみを提供するため）
     private MusicConditionEvaluator() {}
 
-    /**
-     * 現在のプレイヤーとレベルの状況を収集し、CurrentContext オブジェクトを作成します。
-     * @param player 判定対象のプレイヤー
-     * @param level プレイヤーがいるレベル
-     * @param screen 現在開いているGUIスクリーン
-     * @return 現在の状況を表す CurrentContext オブジェクト
-     */
     public static CurrentContext getCurrentContext(@Nullable LocalPlayer player, @Nullable Level level, @Nullable Screen screen) {
         CurrentContext context = new CurrentContext();
 
-        // プレイヤーやレベルが null の場合に対応
         if (player == null || level == null) {
             LOGGER.trace("Player or Level is null, returning empty context.");
-            // context のデフォルト値 (null や false) が設定される
             return context;
         }
 
-        context.dimension = level.dimension(); // ディメンションの ResourceKey
-        context.biomeHolder = level.getBiome(player.blockPosition()); // バイオーム Holder
-        context.time = level.getDayTime() % 24000; // 昼夜サイクル時間 (0-23999)
-        context.isRaining = level.isRaining(); // 雨が降っているか
-        context.isThundering = level.isThundering(); // 雷雨か
-        context.altitude = player.getY(); // プレイヤーのY座標
-
-        // GameContextHelper の静的メソッドを呼び出して戦闘状態と村の状態を取得
+        context.dimension = level.dimension();
+        context.biomeHolder = level.getBiome(player.blockPosition());
+        context.time = level.getDayTime() % 24000;
+        context.isRaining = level.isRaining();
+        context.isThundering = level.isThundering();
+        context.altitude = player.getY();
         context.isInCombat = GameContextHelper.updateCombatStateAndCheck(player, level);
         context.isInVillage = GameContextHelper.isInVillageHeuristic(player, level);
-
-        context.currentGui = screen; // 現在開いている GUI スクリーン
-        context.isNight = context.time >= 13000 && context.time < 23000; // 時間帯が夜か (簡略判定)
-        context.dimensionId = level.dimension().location(); // ディメンションの ResourceLocation
+        context.currentGui = screen;
+        context.isNight = context.time >= 13000 && context.time < 23000;
+        context.dimensionId = level.dimension().location();
 
         return context;
     }
 
-
-    /**
-     * 指定された SoundDefinition の条件が、与えられた CurrentContext にすべて一致するかを判定します。
-     * 条件が定義されていない場合は常に一致とみなされます。
-     * @param definition 評価する SoundDefinition
-     * @param context 現在のゲーム状況
-     * @return 条件が一致すれば true、そうでなければ false
-     */
-    public static boolean doesDefinitionMatch(MusicDefinition definition, CurrentContext context) { // 型を変更
+    public static boolean doesDefinitionMatch(MusicDefinition definition, CurrentContext context) {
         if (context == null) {
             LOGGER.trace("Context is null, cannot match definition.");
             return false;
         }
-        // soundEventLocation の代わりに soundEventKey や oggResourceLocation をログで使う
         String logDefId = definition.getSoundEventKey() != null ? definition.getSoundEventKey() : definition.getMusicFileInPack();
 
         try {
-            // --- Biome Check ---
+            // Biome Check
             if (definition.getBiomes() != null && !definition.getBiomes().isEmpty()) {
                 if (context.biomeHolder == null || context.biomeHolder.is(ResourceKey.create(Registries.BIOME, ResourceLocation.parse("empty")))) {
                     LOGGER.trace("Failed biome check: Current biome holder is null or empty for {}", logDefId);
                     return false;
                 }
-                // ... (definition.biomes を definition.getBiomes() に変更して同様のロジック) ...
-                // ログ出力の definition.soundEventLocation を logDefId に変更
                 boolean biomeMatchFound = false;
-                for (String requiredBiomeOrTag : definition.getBiomes()) { // getterを使用
+                for (String requiredBiomeOrTag : definition.getBiomes()) {
                     if (requiredBiomeOrTag == null || requiredBiomeOrTag.isBlank()) continue;
-
                     if (requiredBiomeOrTag.startsWith("#")) {
                         try {
                             ResourceLocation tagRL = ResourceLocation.parse(requiredBiomeOrTag.substring(1));
@@ -122,31 +97,30 @@ public class MusicConditionEvaluator {
                 }
             }
 
-            // --- Altitude Check ---
-            if (definition.getMinY() != null && context.altitude < definition.getMinY()) { // getterを使用
+            // Altitude Check
+            if (definition.getMinY() != null && context.altitude < definition.getMinY()) {
                 LOGGER.trace("Failed minY check: required={}, current={}", definition.getMinY(), context.altitude);
                 return false;
             }
-            if (definition.getMaxY() != null && context.altitude > definition.getMaxY()) { // getterを使用
+            if (definition.getMaxY() != null && context.altitude > definition.getMaxY()) {
                 LOGGER.trace("Failed maxY check: required={}, current={}", definition.getMaxY(), context.altitude);
                 return false;
             }
 
-            // --- isNight Check ---
-            if (definition.isNight() != null && Boolean.TRUE.equals(definition.isNight()) != context.isNight) { // getterを使用
+            // isNight Check
+            if (definition.isNight() != null && Boolean.TRUE.equals(definition.isNight()) != context.isNight) {
                 LOGGER.trace("Failed isNight check: required={}, current={}", definition.isNight(), context.isNight);
                 return false;
             }
 
-            // --- inCombat Check ---
-            if (definition.isCombat() != null && Boolean.TRUE.equals(definition.isCombat()) != context.isInCombat) { // getterを使用
+            // inCombat Check
+            if (definition.isCombat() != null && Boolean.TRUE.equals(definition.isCombat()) != context.isInCombat) {
                 LOGGER.trace("Failed isCombat check: required={}, current={}", definition.isCombat(), context.isInCombat);
                 return false;
             }
 
-            // --- GUI Check ---
-            if (definition.getGuiScreen() != null && !definition.getGuiScreen().isBlank()) { // getterを使用
-                // ... (definition.guiScreen を definition.getGuiScreen() に変更して同様のロジック) ...
+            // GUI Check
+            if (definition.getGuiScreen() != null && !definition.getGuiScreen().isBlank()) {
                 boolean guiMatch = false;
                 String currentGuiClassName = (context.currentGui != null) ? context.currentGui.getClass().getName() : null;
                 String currentGuiSimpleName = (context.currentGui != null) ? context.currentGui.getClass().getSimpleName() : null;
@@ -155,7 +129,11 @@ public class MusicConditionEvaluator {
                 if (requiredGui.equals(currentGuiClassName)) guiMatch = true;
                 else if (requiredGui.equalsIgnoreCase(currentGuiSimpleName)) guiMatch = true;
                 else if (requiredGui.equalsIgnoreCase("crafting") && context.currentGui instanceof CraftingScreen) guiMatch = true;
-                    // ... (他のGUIタイプも同様に) ...
+                else if (requiredGui.equalsIgnoreCase("inventory") && context.currentGui instanceof InventoryScreen) guiMatch = true;
+                else if (requiredGui.equalsIgnoreCase("furnace") && context.currentGui instanceof FurnaceScreen) guiMatch = true;
+                else if (requiredGui.equalsIgnoreCase("brewing_stand") && context.currentGui instanceof BrewingStandScreen) guiMatch = true;
+                else if (requiredGui.equalsIgnoreCase("chest") && (context.currentGui instanceof ContainerScreen || context.currentGui instanceof ShulkerBoxScreen)) guiMatch = true;
+                else if (requiredGui.equalsIgnoreCase("creative") && context.currentGui instanceof CreativeModeInventoryScreen) guiMatch = true;
                 else if ((requiredGui.equalsIgnoreCase("null") || requiredGui.equalsIgnoreCase("none")) && context.currentGui == null) guiMatch = true;
 
                 if (!guiMatch) {
@@ -164,14 +142,14 @@ public class MusicConditionEvaluator {
                 }
             }
 
-            // --- inVillage Check ---
-            if (definition.isVillage() != null && Boolean.TRUE.equals(definition.isVillage()) != context.isInVillage) { // getterを使用
+            // inVillage Check
+            if (definition.isVillage() != null && Boolean.TRUE.equals(definition.isVillage()) != context.isInVillage) {
                 LOGGER.trace("Failed isVillage check: required={}, current={}", definition.isVillage(), context.isInVillage);
                 return false;
             }
 
-            // --- Weather Check ---
-            if (definition.getWeather() != null && !definition.getWeather().isEmpty()) { // getterを使用
+            // Weather Check
+            if (definition.getWeather() != null && !definition.getWeather().isEmpty()) {
                 boolean weatherMatchFound = false;
                 boolean currentlyThundering = context.isThundering;
                 boolean currentlyRainingOnly = context.isRaining && !context.isThundering;
@@ -196,8 +174,8 @@ public class MusicConditionEvaluator {
                 }
             }
 
-            // --- Dimension Check ---
-            if (definition.getDimensions() != null && !definition.getDimensions().isEmpty()) { // getterを使用
+            // Dimension Check
+            if (definition.getDimensions() != null && !definition.getDimensions().isEmpty()) {
                 if (context.dimensionId != null) {
                     String currentDimensionIdStr = context.dimensionId.toString();
                     boolean dimensionMatchFound = false;
@@ -218,6 +196,119 @@ public class MusicConditionEvaluator {
                 }
             }
 
+            // Entity Conditions Check
+            List<String> entityConditions = definition.getEntityConditions();
+            Double radius = definition.getRadius();
+            Integer minCount = definition.getMinCount();
+            Integer maxCount = definition.getMaxCount();
+
+            if (entityConditions != null && !entityConditions.isEmpty()) {
+                Minecraft mc = Minecraft.getInstance();
+                LocalPlayer player = mc.player;
+                Level level = mc.level;
+
+                if (player == null || level == null || radius == null || radius <= 0) {
+                    LOGGER.warn("Skipping entity condition check due to invalid state (player/level null or radius <= 0) for {}", logDefId);
+                    return false;
+                }
+
+                List<String> includeConditions = entityConditions.stream()
+                        .filter(s -> s != null && !s.startsWith("!"))
+                        .toList();
+                List<String> excludeConditions = entityConditions.stream()
+                        .filter(s -> s != null && s.startsWith("!"))
+                        .map(s -> s.substring(1))
+                        .toList();
+
+                Predicate<EntityType<?>> typeMatchesInclude = type -> {
+                    if (includeConditions.isEmpty()) return true;
+                    ResourceLocation typeRL = EntityType.getKey(type);
+                    for (String includeIdOrTag : includeConditions) {
+                        if (includeIdOrTag.startsWith("#")) {
+                            try {
+                                ResourceLocation tagRL = ResourceLocation.parse(includeIdOrTag.substring(1));
+                                TagKey<EntityType<?>> tagKey = TagKey.create(Registries.ENTITY_TYPE, tagRL);
+                                if (type.is(tagKey)) return true;
+                            } catch (ResourceLocationException e) {
+                                LOGGER.warn("Invalid include entity tag format in definition [{}]: '{}'", logDefId, includeIdOrTag);
+                            }
+                        } else {
+                            try {
+                                ResourceLocation idRL = ResourceLocation.parse(includeIdOrTag);
+                                if (typeRL.equals(idRL)) return true;
+                            } catch (ResourceLocationException e) {
+                                LOGGER.warn("Invalid include entity ID format in definition [{}]: '{}'", logDefId, includeIdOrTag);
+                            }
+                        }
+                    }
+                    return false;
+                };
+
+                Predicate<EntityType<?>> typeMatchesExclude = type -> {
+                    if (excludeConditions.isEmpty()) return false;
+                    ResourceLocation typeRL = EntityType.getKey(type);
+                    for (String excludeIdOrTag : excludeConditions) {
+                        if (excludeIdOrTag.startsWith("#")) {
+                            try {
+                                ResourceLocation tagRL = ResourceLocation.parse(excludeIdOrTag); // Already removed "!"
+                                TagKey<EntityType<?>> tagKey = TagKey.create(Registries.ENTITY_TYPE, tagRL);
+                                if (type.is(tagKey)) return true;
+                            } catch (ResourceLocationException e) {
+                                LOGGER.warn("Invalid exclude entity tag format in definition [{}]: '{}'", logDefId, excludeIdOrTag);
+                            }
+                        } else {
+                            try {
+                                ResourceLocation idRL = ResourceLocation.parse(excludeIdOrTag); // Already removed "!"
+                                if (typeRL.equals(idRL)) return true;
+                            } catch (ResourceLocationException e) {
+                                LOGGER.warn("Invalid exclude entity ID format in definition [{}]: '{}'", logDefId, excludeIdOrTag);
+                            }
+                        }
+                    }
+                    return false;
+                };
+
+                List<Entity> entitiesInRadius = level.getEntities(
+                        (Entity) null,
+                        player.getBoundingBox().inflate(radius),
+                        Entity::isAlive
+                );
+
+                int count = 0;
+                for (Entity entity : entitiesInRadius) {
+                    EntityType<?> entityType = entity.getType();
+                    boolean matchesInclude = typeMatchesInclude.test(entityType);
+                    boolean matchesExclude = typeMatchesExclude.test(entityType);
+                    boolean shouldCount = (includeConditions.isEmpty() ? !matchesExclude : matchesInclude && !matchesExclude);
+                    if (shouldCount) {
+                        count++;
+                    }
+                }
+
+                boolean currentConditionMet = minCount == null || count >= minCount;
+                if (maxCount != null && count > maxCount) {
+                    currentConditionMet = false;
+                }
+
+                if (!currentConditionMet) {
+                    LOGGER.trace("Failed entity condition for {}: Required Entities={}, Radius={}, RequiredMin={}, RequiredMax={}, FoundCount={}",
+                            logDefId, entityConditions, radius,
+                            minCount != null ? minCount : "N/A",
+                            maxCount != null ? maxCount : "N/A",
+                            count);
+                    return false;
+                } else {
+                    LOGGER.trace("Entity condition MET for {}: Required Entities={}, Radius={}, RequiredMin={}, RequiredMax={}, FoundCount={}",
+                            logDefId, entityConditions, radius,
+                            minCount != null ? minCount : "N/A",
+                            maxCount != null ? maxCount : "N/A",
+                            count);
+                }
+            } else if (radius != null || minCount != null || maxCount != null) {
+                LOGGER.warn("Invalid entity condition configuration for {}: entity_conditions list is empty/null but radius/min/max is specified.", logDefId);
+                return false;
+            }
+
             LOGGER.trace("Definition conditions MET for: {}", logDefId);
             return true;
 
@@ -227,14 +318,7 @@ public class MusicConditionEvaluator {
         }
     }
 
-
-    // --- コンテキスト保持用クラス ---
-    // CurrentContext クラスを MusicConditionEvaluator クラス内に移動
-    /**
-     * ゲームの現在の状況を表すデータを保持する内部クラス。
-     * ClientMusicManager によって収集され、MusicConditionEvaluator によって使用されます。
-     */
-    public static class CurrentContext { // public static にして外部からアクセス可能にする
+    public static class CurrentContext {
         public ResourceKey<Level> dimension;
         @Nullable
         public Holder<Biome> biomeHolder;
