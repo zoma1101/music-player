@@ -271,17 +271,22 @@ public class MusicConditionEvaluator {
                     }
                     return false;
                 };
-
                 List<Entity> entitiesInRadius = level.getEntities(
                         (Entity) null, // Search for all entity types
                         player.getBoundingBox().inflate(radius),
-                        Entity::isAlive // Filter for living entities
+                        // ↓ LivingEntityのインスタンスであるかのみをチェック
+                        entity -> entity instanceof net.minecraft.world.entity.LivingEntity
                 );
 
                 int count = 0;
                 List<String> countedEntityInfo = new ArrayList<>(); // ★ログ出力用リスト
 
-                for (Entity entity : entitiesInRadius) {
+                for (Entity entity : entitiesInRadius) { // entitiesInRadius には LivingEntity のみが含まれる想定
+                    // isAliveチェックはlevel.getEntitiesのフィルタで実施済み、またはここで追加する
+                    if (!entity.isAlive()) { // LivingEntityであっても生存していなければスキップ
+                        continue;
+                    }
+
                     EntityType<?> entityType = entity.getType();
                     boolean matchesInclude = typeMatchesInclude.test(entityType);
                     boolean matchesExclude = typeMatchesExclude.test(entityType);
@@ -295,9 +300,9 @@ public class MusicConditionEvaluator {
                         String entityRegName = entityKey.toString();
                         countedEntityInfo.add(
                                 String.format("%s (ID: %s, Pos: %s)",
-                                        entity.getName().getString(), // 表示名
-                                        entityRegName,                // レジストリ名
-                                        entity.blockPosition() // 位置
+                                        entity.getName().getString(),
+                                        entityRegName,
+                                        entity.blockPosition()
                                 ));
                     }
                 }
@@ -315,9 +320,9 @@ public class MusicConditionEvaluator {
                 }
 
 
-                boolean currentConditionMet = minCount == null || count >= minCount; // Assume true initially
+                boolean currentConditionMet = minCount == null || count >= minCount;
 
-                if (currentConditionMet && maxCount != null && count > maxCount) { // Only check maxCount if minCount (or no minCount) was met
+                if (currentConditionMet && maxCount != null && count > maxCount) {
                     currentConditionMet = false;
                 }
 
