@@ -37,4 +37,10 @@ soundpack/pack_id/assets/pack_id/music/name.ogg
 crafting/brewing_stand/shulker_box/furnace/anvil/enchantment/cartographytable/smithing/merchant
 ]
 #指定したGUIを開いているときのみ再生されます。
+
+
+"entity_conditions": [] #指定したエンティティがradiusブロック内にmin_count以上、max_count以下いるとき再生されます。
+"radius": n, #nブロック内にいるか検知します
+"min_count": n, 
+"max_count": n
 ```
