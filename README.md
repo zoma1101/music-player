@@ -34,7 +34,7 @@ soundpack/pack_id/assets/pack_id/music/name.ogg
 "weather" : [clear/rain/thunder] #指定した天候のときに再生されます。
 "dimensions" : [] #指定したディメンションのときに再生されます。
 "gui_screen": [
-crafting/brewing_stand/shulker_box/furnace/anvil/enchantment/cartographytable/smithing/merchant
+crafting/inventory/furnace/brewing_stand/chest/creative
 ]
 #指定したGUIを開いているときのみ再生されます。
 ```
