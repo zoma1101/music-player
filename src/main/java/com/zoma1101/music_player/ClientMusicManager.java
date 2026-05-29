@@ -122,7 +122,7 @@ public class ClientMusicManager {
                 isRecordPlaying = true;
                 lastPlayedRecordInstance = soundBeingPlayed; // 再生中のレコードインスタンスを保存
                 if (currentMusicInstance != null) {
-                    LOGGER.info("Stopping MOD music because a record-source sound started.");
+                    LOGGER.debug("Stopping MOD music because a record-source sound started.");
                     stopMusic(true);
                     currentMusicSoundEventKey = null;
                 }
@@ -164,7 +164,7 @@ public class ClientMusicManager {
 
                 // オーバーライド設定が有効
             if (modMusicShouldBePlaying) {
-                LOGGER.info("[onPlaySound] Override enabled. MOD music should be playing (Key: {}). Cancelling other MUSIC-source sound: {}", currentMusicSoundEventKey, playingSoundEventLocation);
+                LOGGER.debug("[onPlaySound] Override enabled. MOD music should be playing (Key: {}). Cancelling other MUSIC-source sound: {}", currentMusicSoundEventKey, playingSoundEventLocation);
                 event.setSound(null); // 他のMOD/バニラのBGMをキャンセル
             }
         }
@@ -284,7 +284,7 @@ public class ClientMusicManager {
         }
     }
 
-    private static void stopMusic(boolean setStoppingFlag) {
+    public static void stopMusic(boolean setStoppingFlag) {
         SoundManager soundManager = Minecraft.getInstance().getSoundManager();
         if (currentMusicInstance != null) {
             LOGGER.debug("Stopping music instance for key: {}", currentMusicSoundEventKey);

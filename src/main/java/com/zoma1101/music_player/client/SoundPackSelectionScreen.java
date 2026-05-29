@@ -26,6 +26,8 @@ public class SoundPackSelectionScreen extends Screen {
     // 画面を開いた時点でのアクティブなパックIDと、画面上で変更中のアクティブなパックID
     private List<String> initialActivePackIds;
     private List<String> currentWorkingActivePackIds;
+    private List<String> initialPackOrder;
+    private List<String> currentWorkingPackOrder;
 
     private MultiLineLabel noPacksLabel = MultiLineLabel.EMPTY;
 
@@ -44,9 +46,28 @@ public class SoundPackSelectionScreen extends Screen {
 
         List<SoundPackInfo> availablePacks = Music_Player.soundPackManager.getLoadedSoundPacks();
         this.initialActivePackIds = new ArrayList<>(Music_Player.soundPackManager.getActiveSoundPackIds());
-        this.currentWorkingActivePackIds = new ArrayList<>(this.initialActivePackIds);
+        if (this.currentWorkingActivePackIds == null) {
+            this.currentWorkingActivePackIds = new ArrayList<>(this.initialActivePackIds);
+        }
 
-        this.soundPackList = new SoundPackList(this.minecraft, this.width, this.height - 64 - 32, 32, this.height - 64, 36, availablePacks, this);
+        this.initialPackOrder = new ArrayList<>(Music_Player.soundPackManager.getPackOrder());
+        if (this.currentWorkingPackOrder == null) {
+            this.currentWorkingPackOrder = new ArrayList<>(this.initialPackOrder);
+        }
+
+        // 表示用リストを作成：currentWorkingPackOrder の順序に従って利用可能なパックを並べる
+        List<SoundPackInfo> displayPacks = new ArrayList<>();
+        for (String id : this.currentWorkingPackOrder) {
+            availablePacks.stream().filter(p -> p.getId().equals(id)).findFirst().ifPresent(displayPacks::add);
+        }
+        // もし新しくロードされたパックなどがあって currentWorkingPackOrder に入っていないものがあれば末尾に追加
+        for (SoundPackInfo pack : availablePacks) {
+            if (!displayPacks.contains(pack)) {
+                displayPacks.add(pack);
+            }
+        }
+
+        this.soundPackList = new SoundPackList(this.minecraft, this.width, this.height - 64 - 32, 32, this.height - 64, 36, displayPacks, this);
         this.addWidget(this.soundPackList);
 
 
@@ -79,6 +100,8 @@ public class SoundPackSelectionScreen extends Screen {
 
     private void reloadPacks() {
         // SoundPackManager が null の場合のチェックを追加
+        // reloadPacks時に一時的に音楽を停止 (ZipFileSystemのクローズによるエラーを防止)
+        com.zoma1101.music_player.ClientMusicManager.stopMusic(false);
         Music_Player.soundPackManager.discoverAndLoadPacks();
 
         if (this.minecraft != null) {
@@ -91,15 +114,23 @@ public class SoundPackSelectionScreen extends Screen {
 
 
     private void applyChanges() {
-        // SoundPackManager が null の場合のチェックを追加
+        boolean changed = false;
         if (!this.initialActivePackIds.equals(this.currentWorkingActivePackIds)) {
             Music_Player.soundPackManager.setActiveSoundPackIds(this.currentWorkingActivePackIds);
+            changed = true;
+        }
+        if (!this.initialPackOrder.equals(this.currentWorkingPackOrder)) {
+            Music_Player.soundPackManager.setPackOrder(this.currentWorkingPackOrder);
+            changed = true;
+        }
+
+        if (changed) {
             if (this.minecraft != null) {
                 this.minecraft.reloadResourcePacks();
             }
-            LOGGER.info("Applied sound pack changes and triggered resource reload.");
+            LOGGER.info("Applied sound pack changes (activation or order) and triggered resource reload.");
         } else {
-            LOGGER.info("No changes in active sound packs to apply.");
+            LOGGER.info("No changes in sound packs to apply.");
         }
     }
 
@@ -107,15 +138,30 @@ public class SoundPackSelectionScreen extends Screen {
         return this.currentWorkingActivePackIds;
     }
 
-    public void togglePackActivation(String packId) {
+    public boolean togglePackActivation(String packId) {
         if (this.currentWorkingActivePackIds.contains(packId)) {
             this.currentWorkingActivePackIds.remove(packId);
         } else {
             this.currentWorkingActivePackIds.add(packId);
         }
         if (this.soundPackList != null) {
-            this.soundPackList.children().forEach(SoundPackList.Entry::updateSelectedStatus);
+            this.soundPackList.children().forEach(SoundPackList.SoundPackEntry::updateSelectedStatus);
         }
+        return this.currentWorkingActivePackIds.contains(packId);
+    }
+
+    public void updateOrderFromList(List<SoundPackList.SoundPackEntry> entries) {
+        List<String> newOrder = new ArrayList<>();
+        for (SoundPackList.SoundPackEntry entry : entries) {
+            newOrder.add(entry.getPackInfo().getId());
+        }
+        this.currentWorkingPackOrder = newOrder;
+    }
+
+    public void rebuildSoundPackList() {
+        if (this.minecraft == null) return;
+        this.clearWidgets();
+        this.init();
     }
 
     // renderBackgroundメソッドをオーバーライドして、デフォルトの背景描画を制御

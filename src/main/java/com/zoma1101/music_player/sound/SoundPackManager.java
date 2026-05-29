@@ -18,9 +18,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -34,14 +35,16 @@ public class SoundPackManager {
 
     private static final Path CONFIG_DIR = Paths.get("config");
     private static final String ACTIVE_PACKS_CONFIG_FILE_NAME = Music_Player.MOD_ID + "_active_packs.json";
+    private static final String PACK_ORDER_CONFIG_FILE_NAME = Music_Player.MOD_ID + "_pack_order.json";
 
-    private final List<SoundPackInfo> loadedSoundPacks = new ArrayList<>();
-    private final List<MusicDefinition> allMusicDefinitions = new ArrayList<>();
-    private final Map<ResourceLocation, Path> oggResourceMap = new HashMap<>();
-    private final Map<String, MusicDefinition> musicDefinitionByEventKey = new HashMap<>();
-    private List<String> activeSoundPackIds = new ArrayList<>();
+    private final List<SoundPackInfo> loadedSoundPacks = new CopyOnWriteArrayList<>();
+    private final List<MusicDefinition> allMusicDefinitions = new CopyOnWriteArrayList<>();
+    private final Map<ResourceLocation, Path> oggResourceMap = new ConcurrentHashMap<>();
+    private final Map<String, MusicDefinition> musicDefinitionByEventKey = new ConcurrentHashMap<>();
+    private List<String> activeSoundPackIds = new CopyOnWriteArrayList<>();
+    private List<String> packOrder = new CopyOnWriteArrayList<>();
 
-    private final List<FileSystem> openZipFileSystems = new ArrayList<>();
+    private final List<FileSystem> openZipFileSystems = new CopyOnWriteArrayList<>();
 
     public SoundPackManager() {
         // コンストラクタでの loadActivePacksConfig() 呼び出しは discoverAndLoadPacks に移動
@@ -103,47 +106,60 @@ public class SoundPackManager {
         }
         LOGGER.info("Initial scan complete. Found {} potential sound packs.", loadedSoundPacks.size());
 
+        // 順序設定の読み込みとソート
+        List<String> loadedOrder = loadPackOrderConfig();
+        List<SoundPackInfo> sortedPacks = new ArrayList<>();
+        // まず loadedOrder に含まれるものを順番に追加
+        for (String id : loadedOrder) {
+            loadedSoundPacks.stream()
+                    .filter(p -> p.getId().equals(id))
+                    .findFirst()
+                    .ifPresent(sortedPacks::add);
+        }
+        // 次に、loadedOrder に含まれない（新しく追加された）ものを追加
+        for (SoundPackInfo pack : loadedSoundPacks) {
+            if (!sortedPacks.contains(pack)) {
+                sortedPacks.add(pack);
+            }
+        }
+        // loadedSoundPacks をソート済みのものに置き換え
+        this.loadedSoundPacks.clear();
+        this.loadedSoundPacks.addAll(sortedPacks);
+
+        // 最新の順序リストを packOrder に保存
+        this.packOrder = this.loadedSoundPacks.stream()
+                .map(SoundPackInfo::getId)
+                .collect(Collectors.toCollection(CopyOnWriteArrayList::new));
+        savePackOrderConfig();
+
         // 2. 次に、設定ファイルから前回のアクティブなパックIDを読み込む
         List<String> configuredActiveIds = loadActivePacksConfig(); // 読み込んだIDを一時変数に
 
         // 3. 最後に、読み込んだ設定とロードされたパック情報を照合
         if (!loadedSoundPacks.isEmpty()) {
-            if (!configuredActiveIds.isEmpty()) {
-                // 設定ファイルにIDがあり、かつ実際にロードされたパックと照合
-                this.activeSoundPackIds = configuredActiveIds.stream()
-                        .filter(id -> loadedSoundPacks.stream().anyMatch(pack -> pack.getId().equals(id)))
-                        .collect(Collectors.toList());
-                LOGGER.info("Applied active sound packs from configuration: {}. (Valid against loaded: {})", configuredActiveIds, this.activeSoundPackIds);
-                if (configuredActiveIds.size() != this.activeSoundPackIds.size()) {
-                    LOGGER.warn("Some configured active packs were not found among loaded packs. Saving updated valid list.");
-                    saveActivePacksConfig(); // 有効なものだけになったので保存し直す
-                }
-            } else {
-                // 設定ファイルが空、または存在しなかった場合、ロードされた全パックをアクティブにする (初回起動など)
-                this.activeSoundPackIds = loadedSoundPacks.stream()
-                        .map(SoundPackInfo::getId)
-                        .collect(Collectors.toList());
-                LOGGER.info("No active packs in configuration or configuration not found. Activated all loaded sound packs by default: {}", this.activeSoundPackIds);
-                saveActivePacksConfig(); // デフォルトで有効化したので設定を保存
-            }
-        } else {
-            // ロードされたパックが一つもない場合
-            this.activeSoundPackIds.clear();
-            LOGGER.info("No sound packs loaded. Active sound pack list is empty.");
-            if (!configuredActiveIds.isEmpty()) {
-                // 設定にはあったがパックがロードされなかった場合、設定をクリアして保存
-                LOGGER.warn("Configured active packs {} found, but no packs were loaded. Clearing and saving configuration.", configuredActiveIds);
+            // 設定ファイルにあるIDのうち、現在ロードされているものだけを抽出（順序を維持）
+            this.activeSoundPackIds = configuredActiveIds.stream()
+                    .filter(id -> loadedSoundPacks.stream().anyMatch(pack -> pack.getId().equals(id)))
+                    .collect(Collectors.toCollection(CopyOnWriteArrayList::new));
+
+            if (configuredActiveIds.isEmpty()) {
+                LOGGER.info("No active packs in configuration. New packs will remain inactive until manually enabled.");
+            } else if (configuredActiveIds.size() != this.activeSoundPackIds.size()) {
+                LOGGER.warn("Some configured active packs were not found among loaded packs. Updated valid list.");
                 saveActivePacksConfig();
             }
+        } else {
+            this.activeSoundPackIds.clear();
+            LOGGER.info("No sound packs loaded.");
         }
 
-        LOGGER.info("Finished processing sound packs. Loaded: {} packs, {} music definitions, {} ogg resources. Active packs: {}",
-                loadedSoundPacks.size(), allMusicDefinitions.size(), oggResourceMap.size(), this.activeSoundPackIds);
+        LOGGER.info("Finished processing sound packs. Loaded: {} packs, {} music definitions. Active/Configured count: {}",
+                loadedSoundPacks.size(), allMusicDefinitions.size(), this.activeSoundPackIds.size());
     }
 
     private List<String> loadActivePacksConfig() { // 戻り値をList<String>に変更
         Path configFile = CONFIG_DIR.resolve(ACTIVE_PACKS_CONFIG_FILE_NAME);
-        List<String> loadedIds = new ArrayList<>(); // ここで初期化
+        List<String> loadedIds = new ArrayList<>(); // 設定の読み込み時は標準のArrayListでOK
         if (Files.exists(configFile) && Files.isRegularFile(configFile)) {
             try (Reader reader = Files.newBufferedReader(configFile, StandardCharsets.UTF_8)) {
                 Type listType = new TypeToken<ArrayList<String>>() {}.getType();
@@ -178,6 +194,39 @@ public class SoundPackManager {
         }
     }
 
+    private List<String> loadPackOrderConfig() {
+        Path configFile = CONFIG_DIR.resolve(PACK_ORDER_CONFIG_FILE_NAME);
+        List<String> loadedIds = new ArrayList<>();
+        if (Files.exists(configFile) && Files.isRegularFile(configFile)) {
+            try (Reader reader = Files.newBufferedReader(configFile, StandardCharsets.UTF_8)) {
+                Type listType = new TypeToken<ArrayList<String>>() {}.getType();
+                List<String> parsedIds = GSON.fromJson(reader, listType);
+                if (parsedIds != null) {
+                    loadedIds.addAll(parsedIds);
+                    LOGGER.info("Loaded sound pack order configuration from {}: {}", configFile.toAbsolutePath(), loadedIds);
+                }
+            } catch (IOException | JsonParseException e) {
+                LOGGER.error("Failed to read or parse sound pack order configuration file: {}", configFile.toAbsolutePath(), e);
+            }
+        }
+        return loadedIds;
+    }
+
+    private void savePackOrderConfig() {
+        Path configFile = CONFIG_DIR.resolve(PACK_ORDER_CONFIG_FILE_NAME);
+        try {
+            if (!Files.exists(CONFIG_DIR)) {
+                Files.createDirectories(CONFIG_DIR);
+            }
+            try (Writer writer = Files.newBufferedWriter(configFile, StandardCharsets.UTF_8)) {
+                GSON.toJson(this.packOrder, writer);
+                LOGGER.info("Saved sound pack order configuration to {}: {}", configFile.toAbsolutePath(), this.packOrder);
+            }
+        } catch (IOException e) {
+            LOGGER.error("Failed to save sound pack order configuration file: {}", configFile.toAbsolutePath(), e);
+        }
+    }
+
     private void loadSingleDirectorySoundPack(Path packRootDir) {
         String displayName = packRootDir.getFileName().toString();
         LOGGER.info("Processing directory sound pack: '{}'", displayName);
@@ -206,6 +255,10 @@ public class SoundPackManager {
 
     private void loadSingleSoundPackLogic(Path packRootPathInFs, String baseDisplayName, boolean isZip) {
         String internalId = baseDisplayName.toLowerCase().replaceAll("[^a-z0-9_.-]", "_");
+        if (internalId.isEmpty()) {
+            LOGGER.error("  Generated internal ID for pack '{}' is empty. Skipping.", baseDisplayName);
+            return;
+        }
         LOGGER.info("  Internal ID: {}, Base Display Name: {}, IsZip: {}", internalId, baseDisplayName, isZip);
 
         Path mcmetaPath = packRootPathInFs.resolve(PACK_METADATA_FILE);
@@ -394,9 +447,20 @@ public class SoundPackManager {
     }
 
     public List<MusicDefinition> getActiveMusicDefinitionsSorted() {
+        // パックの優先順位（packOrder のインデックス）を考慮してソート
+        // packOrder の先頭（インデックス0）が最も優先度が高いとする
         return allMusicDefinitions.stream()
                 .filter(def -> activeSoundPackIds.contains(def.getSoundPackId()))
-                .sorted((a, b) -> Integer.compare(b.getPriority(), a.getPriority()))
+                .sorted((a, b) -> {
+                    int indexA = packOrder.indexOf(a.getSoundPackId());
+                    int indexB = packOrder.indexOf(b.getSoundPackId());
+                    
+                    if (indexA != indexB) {
+                        return Integer.compare(indexA, indexB); // インデックスが小さい（リストの上の）パックを優先
+                    }
+                    // 同じパック内、または同じ優先順位のパック間では、曲自体の priority で比較
+                    return Integer.compare(b.getPriority(), a.getPriority());
+                })
                 .collect(Collectors.toList());
     }
 
@@ -436,13 +500,38 @@ public class SoundPackManager {
     }
 
     public void setActiveSoundPackIds(List<String> ids) {
-        this.activeSoundPackIds = new ArrayList<>(ids); // UIからの変更を直接反映
+        this.activeSoundPackIds = new CopyOnWriteArrayList<>(ids); // UIからの変更を直接反映
         LOGGER.info("Active sound packs updated by UI (based on internalId): {}", this.activeSoundPackIds);
         saveActivePacksConfig(); // UIからの変更は即座に保存
     }
 
     public List<String> getActiveSoundPackIds() {
         return Collections.unmodifiableList(activeSoundPackIds);
+    }
+
+    public void setPackOrder(List<String> order) {
+        this.packOrder = new CopyOnWriteArrayList<>(order);
+        // loadedSoundPacks の順序もこれに合わせて更新する
+        List<SoundPackInfo> sortedPacks = new ArrayList<>();
+        for (String id : this.packOrder) {
+            loadedSoundPacks.stream()
+                    .filter(p -> p.getId().equals(id))
+                    .findFirst()
+                    .ifPresent(sortedPacks::add);
+        }
+        for (SoundPackInfo pack : loadedSoundPacks) {
+            if (!sortedPacks.contains(pack)) {
+                sortedPacks.add(pack);
+            }
+        }
+        this.loadedSoundPacks.clear();
+        this.loadedSoundPacks.addAll(sortedPacks);
+        
+        savePackOrderConfig();
+    }
+
+    public List<String> getPackOrder() {
+        return Collections.unmodifiableList(packOrder);
     }
 
     public void onShutdown() {

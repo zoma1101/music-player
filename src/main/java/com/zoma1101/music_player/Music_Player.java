@@ -28,7 +28,7 @@ public class Music_Player {
 
     private static ModSoundResourcePack modSoundResourcePackInstance;
 
-    public Music_Player(FMLJavaModLoadingContext ctx) { // FMLJavaModLoadingContext ctx 引数を削除 (一般的なパターン)
+    public Music_Player(FMLJavaModLoadingContext ctx) {
         IEventBus modEventBus = ctx.getModEventBus();
 
         // MODイベントバスへのリスナー登録 (MODライフサイクルイベント用)

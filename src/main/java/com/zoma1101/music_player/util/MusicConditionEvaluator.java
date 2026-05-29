@@ -127,13 +127,14 @@ public class MusicConditionEvaluator {
                 String currentGuiSimpleName = (context.currentGui != null) ? context.currentGui.getClass().getSimpleName() : null;
                 String requiredGui = definition.getGuiScreen().trim();
 
+                // NOTE: クラス名（full/simple）による判定は難号化環境では機能しないため、可能であればinstanceofまたはキーワードを使用してください。
                 if (requiredGui.equals(currentGuiClassName)) guiMatch = true;
                 else if (requiredGui.equalsIgnoreCase(currentGuiSimpleName)) guiMatch = true;
                 else if (requiredGui.equalsIgnoreCase("crafting") && context.currentGui instanceof CraftingScreen) guiMatch = true;
                 else if (requiredGui.equalsIgnoreCase("inventory") && context.currentGui instanceof InventoryScreen) guiMatch = true;
                 else if (requiredGui.equalsIgnoreCase("furnace") && context.currentGui instanceof FurnaceScreen) guiMatch = true;
                 else if (requiredGui.equalsIgnoreCase("brewing_stand") && context.currentGui instanceof BrewingStandScreen) guiMatch = true;
-                else if (requiredGui.equalsIgnoreCase("chest") && (context.currentGui instanceof ContainerScreen || context.currentGui instanceof ShulkerBoxScreen)) guiMatch = true; // ContainerScreen は ChestScreen の親クラスの一つ
+                else if (requiredGui.equalsIgnoreCase("chest") && (context.currentGui instanceof ContainerScreen || context.currentGui instanceof ShulkerBoxScreen)) guiMatch = true;
                 else if (requiredGui.equalsIgnoreCase("creative") && context.currentGui instanceof CreativeModeInventoryScreen) guiMatch = true;
                 else if ((requiredGui.equalsIgnoreCase("null") || requiredGui.equalsIgnoreCase("none")) && context.currentGui == null) guiMatch = true;
 
@@ -153,14 +154,13 @@ public class MusicConditionEvaluator {
             if (definition.getWeather() != null && !definition.getWeather().isEmpty()) {
                 boolean weatherMatchFound = false;
                 boolean currentlyThundering = context.isThundering;
-                boolean currentlyRainingOnly = context.isRaining && !context.isThundering;
                 boolean currentlyClear = !context.isRaining && !context.isThundering;
 
                 for (String requiredWeather : definition.getWeather()) {
                     if (requiredWeather == null) continue;
                     switch (requiredWeather.toLowerCase(Locale.ROOT)) {
                         case "clear": if (currentlyClear) weatherMatchFound = true; break;
-                        case "rain":  if (currentlyRainingOnly) weatherMatchFound = true; break;
+                        case "rain":  if (context.isRaining) weatherMatchFound = true; break; // 雷雨時も雨は降っているので matches
                         case "thunder": if (currentlyThundering) weatherMatchFound = true; break;
                         default: LOGGER.warn("Unknown weather condition '{}' in definition [{}]", requiredWeather, logDefId); break;
                     }

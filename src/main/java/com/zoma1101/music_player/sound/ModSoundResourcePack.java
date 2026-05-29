@@ -22,7 +22,6 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -100,14 +99,6 @@ public class ModSoundResourcePack implements PackResources, PreparableReloadList
                 this.oggResourceMap = Music_Player.soundPackManager.getOggResourceMap();
                 LOGGER.debug("[{}] getResource - FALLBACK COMPLETE: sounds.json length: {}, ogg files: {}",
                         currentPackId, this.soundsJsonContent.length(), this.oggResourceMap.size());
-            }
-            try {
-                // Write current sounds.json content to a debug file.
-                Path debugFile = Paths.get("debug_sounds_provided_by_modsoundresourcepack.json");
-                Files.writeString(debugFile, this.soundsJsonContent, StandardCharsets.UTF_8);
-                LOGGER.debug("[{}] Wrote current sounds.json content to {}", currentPackId, debugFile.toAbsolutePath());
-            } catch (IOException e) {
-                LOGGER.error("[{}] Failed to write debug_sounds_provided_by_modsoundresourcepack.json", currentPackId, e);
             }
             return () -> new ByteArrayInputStream(this.soundsJsonContent.getBytes(StandardCharsets.UTF_8));
         }
