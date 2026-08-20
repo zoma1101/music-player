@@ -38,10 +38,14 @@ public class Music_Player {
 
         // Forgeイベントバスへのリスナー登録 (ゲームイベント用)
         NeoForge.EVENT_BUS.register(this); // GameShuttingDownEvent用
+
+        // NeoForge標準のConfigの登録 (.toml)
+        modContainer.registerConfig(net.neoforged.fml.config.ModConfig.Type.CLIENT, MusicPlayerConfig.SPEC);
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
-        LOGGER.info("Music_Player commonSetup: SoundPackManager will be initialized during the first resource reload via ModSoundResourcePack.reload().");
+        LOGGER.info(
+                "Music_Player commonSetup: SoundPackManager will be initialized during the first resource reload via ModSoundResourcePack.reload().");
     }
 
     // MODイベントバス用のリスナー
@@ -65,14 +69,13 @@ public class Music_Player {
                         modSoundResourcePackInstance.packId(),
                         Component.literal("Music Player Dynamic Sounds"),
                         PackSource.BUILT_IN,
-                        Optional.empty()
-                );
+                        Optional.empty());
 
                 // 2. パックの選択設定（必須かどうか、デフォルト位置、位置を固定するか）
                 PackSelectionConfig selectionConfig = new PackSelectionConfig(
                         true, // isRequired
                         Pack.Position.TOP, // defaultPosition
-                        true  // fixedPosition
+                        true // fixedPosition
                 );
 
                 // 3. メタデータを読み込んでパックを作成
@@ -84,14 +87,15 @@ public class Music_Player {
                             public net.minecraft.server.packs.PackResources openPrimary(PackLocationInfo info) {
                                 return modSoundResourcePackInstance;
                             }
+
                             @Override
-                            public net.minecraft.server.packs.PackResources openFull(PackLocationInfo info, Pack.Metadata metadata) {
+                            public net.minecraft.server.packs.PackResources openFull(PackLocationInfo info,
+                                    Pack.Metadata metadata) {
                                 return modSoundResourcePackInstance;
                             }
                         },
                         PackType.CLIENT_RESOURCES,
-                        selectionConfig
-                );
+                        selectionConfig);
 
                 if (pack != null) {
                     consumer.accept(pack);
