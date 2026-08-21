@@ -2,6 +2,7 @@ package com.zoma1101.music_player;
 
 import com.mojang.logging.LogUtils;
 
+import com.zoma1101.music_player.sound.FadingSoundInstance;
 import com.zoma1101.music_player.sound.MusicDefinition;
 
 import com.zoma1101.music_player.util.MusicConditionEvaluator;
@@ -11,8 +12,6 @@ import net.minecraft.ResourceLocationException;
 import net.minecraft.client.Minecraft;
 
 import net.minecraft.client.player.LocalPlayer;
-
-import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 
 import net.minecraft.client.resources.sounds.SoundInstance;
 
@@ -34,6 +33,7 @@ import net.neoforged.neoforge.client.event.sound.PlaySoundEvent;
 
 import net.neoforged.bus.api.SubscribeEvent;
 
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 
 import javax.annotation.Nullable;
@@ -469,20 +469,7 @@ public class ClientMusicManager {
             }
 
             MusicDefinition def = Music_Player.soundPackManager.getMusicDefinitionByEventKey(soundEventKey);
-            int fadeIn = MusicPlayerConfig.getInstance().getDefaultFadeInTicks();
-            int fadeOut = MusicPlayerConfig.getInstance().getDefaultFadeOutTicks();
-            if (def != null) {
-                if (def.fadeInTicks != null)
-                    fadeIn = def.fadeInTicks;
-                if (def.fadeOutTicks != null)
-                    fadeOut = def.fadeOutTicks;
-            }
-
-            com.zoma1101.music_player.sound.FadingSoundInstance fadingInstance = new com.zoma1101.music_player.sound.FadingSoundInstance(
-                    soundEventRl,
-                    fadeIn,
-                    fadeOut);
-            currentMusicInstance = fadingInstance;
+            currentMusicInstance = getFadingSoundInstance(def, soundEventRl);
 
             Minecraft.getInstance().getSoundManager().play(currentMusicInstance);
             LOGGER.info("Playing fading music with key: [{}], resolved to RL: [{}]", soundEventKey, soundEventRl);
@@ -505,6 +492,22 @@ public class ClientMusicManager {
 
         }
 
+    }
+
+    private static @NotNull FadingSoundInstance getFadingSoundInstance(MusicDefinition def, ResourceLocation soundEventRl) {
+        int fadeIn = MusicPlayerConfig.getInstance().getDefaultFadeInTicks();
+        int fadeOut = MusicPlayerConfig.getInstance().getDefaultFadeOutTicks();
+        if (def != null) {
+            if (def.fadeInTicks != null)
+                fadeIn = def.fadeInTicks;
+            if (def.fadeOutTicks != null)
+                fadeOut = def.fadeOutTicks;
+        }
+
+        return new FadingSoundInstance(
+                soundEventRl,
+                fadeIn,
+                fadeOut);
     }
 
     public static void stopMusic(boolean setStoppingFlag) {

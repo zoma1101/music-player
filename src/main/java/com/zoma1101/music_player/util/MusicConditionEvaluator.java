@@ -21,7 +21,6 @@ import org.slf4j.Logger;
 import javax.annotation.Nullable;
 import java.util.*;
 import java.util.function.Predicate;
-// import java.util.stream.Collectors; // .toList() を使用する場合は不要な場合があるが、明示的に追加しても良い
 
 public class MusicConditionEvaluator {
 
