@@ -18,7 +18,10 @@ import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.event.GameShuttingDownEvent;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.minecraftforge.fml.ModLoadingContext;
+import net.minecraftforge.fml.config.ModConfig;
 import org.slf4j.Logger;
+import com.zoma1101.music_player.config.MusicPlayerClientConfig;
 
 @Mod(Music_Player.MOD_ID)
 public class Music_Player {
@@ -29,6 +32,8 @@ public class Music_Player {
     private static ModSoundResourcePack modSoundResourcePackInstance;
 
     public Music_Player(FMLJavaModLoadingContext ctx) {
+        ModLoadingContext.get().registerConfig(ModConfig.Type.CLIENT, MusicPlayerClientConfig.SPEC);
+
         IEventBus modEventBus = ctx.getModEventBus();
 
         // MODイベントバスへのリスナー登録 (MODライフサイクルイベント用)
@@ -42,7 +47,8 @@ public class Music_Player {
 
     private void commonSetup(final FMLCommonSetupEvent event) {
         soundPackManager.discoverAndLoadPacks(); // ★この行を削除またはコメントアウト
-        LOGGER.info("Music_Player commonSetup: SoundPackManager initialization will occur during the first resource reload via ModSoundResourcePack.");
+        LOGGER.info(
+                "Music_Player commonSetup: SoundPackManager initialization will occur during the first resource reload via ModSoundResourcePack.");
     }
 
     // MODイベントバス用のリスナー
@@ -60,15 +66,15 @@ public class Music_Player {
                 modSoundResourcePackInstance = new ModSoundResourcePack(MOD_ID + "_soundpacks");
             }
 
-            Component packInfoDescription = Component.literal("Provides dynamic sound resources for the Music Player mod.");
+            Component packInfoDescription = Component
+                    .literal("Provides dynamic sound resources for the Music Player mod.");
             int clientPackFormat = SharedConstants.getCurrentVersion().getPackVersion(PackType.CLIENT_RESOURCES);
             FeatureFlagSet requestedFeatures = FeatureFlagSet.of();
 
             final Pack.Info packInfo = new Pack.Info(
                     packInfoDescription,
                     clientPackFormat,
-                    requestedFeatures
-            );
+                    requestedFeatures);
 
             event.addRepositorySource((consumer) -> {
                 Pack pack = Pack.create(
@@ -80,8 +86,7 @@ public class Music_Player {
                         PackType.CLIENT_RESOURCES,
                         Pack.Position.TOP,
                         true,
-                        PackSource.BUILT_IN
-                );
+                        PackSource.BUILT_IN);
                 consumer.accept(pack);
             });
         }

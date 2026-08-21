@@ -43,4 +43,7 @@ crafting/inventory/furnace/brewing_stand/chest/creative
 "radius": n, #nブロック内にいるか検知します
 "min_count": n, 
 "max_count": n
+
+"fade_in_ticks" : n #nティックかけてフェードインします。
+"fade_out_ticks" : n #nティックかけてフェードアウトします。
 ```

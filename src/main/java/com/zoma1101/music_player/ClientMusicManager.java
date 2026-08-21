@@ -6,7 +6,6 @@ import com.zoma1101.music_player.util.MusicConditionEvaluator;
 import net.minecraft.ResourceLocationException;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.client.resources.sounds.SoundInstance;
 import net.minecraft.client.sounds.SoundManager;
 import net.minecraft.resources.ResourceLocation;
@@ -18,6 +17,8 @@ import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.slf4j.Logger;
+import com.zoma1101.music_player.sound.FadingSoundInstance;
+import com.zoma1101.music_player.config.MusicPlayerClientConfig;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -38,19 +39,20 @@ public class ClientMusicManager {
     @Nullable // 最後に再生されたレコードのインスタンスを保持
     private static SoundInstance lastPlayedRecordInstance = null;
 
-
     @SubscribeEvent
     public static void onClientTick(TickEvent.ClientTickEvent event) {
         if (event.phase == TickEvent.Phase.END) {
             Minecraft mc = Minecraft.getInstance();
             LocalPlayer player = mc.player;
 
-            if (player != null && mc.level != null && player.tickCount % CHECK_INTERVAL_TICKS == 0) { // mc.level != null チェックを追加
+            if (player != null && mc.level != null && player.tickCount % CHECK_INTERVAL_TICKS == 0) { // mc.level !=
+                                                                                                      // null チェックを追加
                 if (isRecordPlaying) {
                     SoundManager soundManager = mc.getSoundManager();
                     // レコードが再生中とマークされている場合、実際にまだ再生されているか確認
                     if (lastPlayedRecordInstance != null && !soundManager.isActive(lastPlayedRecordInstance)) {
-                        LOGGER.info("Record music [{}] seems to have stopped. Resuming MOD music checks.", lastPlayedRecordInstance.getLocation());
+                        LOGGER.info("Record music [{}] seems to have stopped. Resuming MOD music checks.",
+                                lastPlayedRecordInstance.getLocation());
                         isRecordPlaying = false;
                         lastPlayedRecordInstance = null; // リセット
                         // MODの音楽ターゲットをクリアして、updateMusicで再評価させる
@@ -59,7 +61,8 @@ public class ClientMusicManager {
                         updateMusic(); // MOD音楽の更新を試みる
                     } else if (lastPlayedRecordInstance == null) {
                         // lastPlayedRecordInstance が何らかの理由でnullだがisRecordPlayingがtrueの場合
-                        LOGGER.warn("isRecordPlaying is true, but lastPlayedRecordInstance is null. Resetting record state.");
+                        LOGGER.warn(
+                                "isRecordPlaying is true, but lastPlayedRecordInstance is null. Resetting record state.");
                         isRecordPlaying = false;
                         updateMusic();
                     } else {
@@ -103,11 +106,11 @@ public class ClientMusicManager {
         lastPlayedRecordInstance = null;
     }
 
-
     @SubscribeEvent
     public static void onPlaySound(PlaySoundEvent event) {
         SoundInstance soundBeingPlayed = event.getSound();
-        if (soundBeingPlayed == null) return;
+        if (soundBeingPlayed == null)
+            return;
 
         ResourceLocation playingSoundEventLocation = soundBeingPlayed.getLocation();
         SoundSource soundSource = soundBeingPlayed.getSource();
@@ -117,7 +120,8 @@ public class ClientMusicManager {
         // これには、バニラのジュークボックスと、他のMODがRECORDSソースで再生するBGMが含まれる可能性があります。
         if (SoundSource.RECORDS.equals(soundSource)) {
             // Music Player自身のレコード再生はありえないので、これはバニラか他のMODのレコード
-            if (!isRecordPlaying || (lastPlayedRecordInstance != null && !lastPlayedRecordInstance.getLocation().equals(playingSoundEventLocation))) {
+            if (!isRecordPlaying || (lastPlayedRecordInstance != null
+                    && !lastPlayedRecordInstance.getLocation().equals(playingSoundEventLocation))) {
                 LOGGER.info("Record-source music [{}] started.", playingSoundEventLocation);
                 isRecordPlaying = true;
                 lastPlayedRecordInstance = soundBeingPlayed; // 再生中のレコードインスタンスを保存
@@ -131,17 +135,22 @@ public class ClientMusicManager {
             return;
         }
 
-        // --- 2. Music Player自身のBGM (SoundSource.MUSIC, Music_Player.MOD_IDネームスペース) の処理 ---
+        // --- 2. Music Player自身のBGM (SoundSource.MUSIC, Music_Player.MOD_IDネームスペース) の処理
+        // ---
         if (SoundSource.MUSIC.equals(soundSource) && Music_Player.MOD_ID.equals(playingNamespace)) {
             // Music PlayerのBGMが再生されようとしている
             if (isRecordPlaying) {
-                LOGGER.debug("[onPlaySound] MOD music [{}] tried to play while a record-source sound is active. Cancelling MOD music.", playingSoundEventLocation); // WARN -> DEBUG
+                LOGGER.debug(
+                        "[onPlaySound] MOD music [{}] tried to play while a record-source sound is active. Cancelling MOD music.",
+                        playingSoundEventLocation); // WARN -> DEBUG
                 event.setSound(null); // Music PlayerのBGMの再生をキャンセル
                 return;
             }
 
-            MusicDefinition def = Music_Player.soundPackManager.getMusicDefinitionByEventKey(playingSoundEventLocation.getPath());
-            boolean isTheCorrectModMusic = def != null && currentMusicSoundEventKey != null && currentMusicSoundEventKey.equals(def.getSoundEventKey());
+            MusicDefinition def = Music_Player.soundPackManager
+                    .getMusicDefinitionByEventKey(playingSoundEventLocation.getPath());
+            boolean isTheCorrectModMusic = def != null && currentMusicSoundEventKey != null
+                    && currentMusicSoundEventKey.equals(def.getSoundEventKey());
 
             if (isTheCorrectModMusic) {
                 // 正しいMusic PlayerのBGMなので、再生を許可
@@ -152,7 +161,8 @@ public class ClientMusicManager {
             return;
         }
 
-        // --- 3. 他のMODまたはバニラのBGM (SoundSource.MUSIC, Music_Player.MOD_ID以外のネームスペース) の処理 ---
+        // --- 3. 他のMODまたはバニラのBGM (SoundSource.MUSIC, Music_Player.MOD_ID以外のネームスペース) の処理
+        // ---
         if (SoundSource.MUSIC.equals(soundSource)) {
             // 他のMODまたはバニラのBGMが再生されようとしている
             if (isRecordPlaying) {
@@ -162,9 +172,11 @@ public class ClientMusicManager {
 
             boolean modMusicShouldBePlaying = currentMusicSoundEventKey != null; // isRecordPlayingのチェックは上記で行った
 
-                // オーバーライド設定が有効
+            // オーバーライド設定が有効
             if (modMusicShouldBePlaying) {
-                LOGGER.debug("[onPlaySound] Override enabled. MOD music should be playing (Key: {}). Cancelling other MUSIC-source sound: {}", currentMusicSoundEventKey, playingSoundEventLocation);
+                LOGGER.debug(
+                        "[onPlaySound] Override enabled. MOD music should be playing (Key: {}). Cancelling other MUSIC-source sound: {}",
+                        currentMusicSoundEventKey, playingSoundEventLocation);
                 event.setSound(null); // 他のMOD/バニラのBGMをキャンセル
             }
         }
@@ -199,7 +211,8 @@ public class ClientMusicManager {
             return;
         }
 
-        MusicConditionEvaluator.CurrentContext context = MusicConditionEvaluator.getCurrentContext(player, mc.level, mc.screen);
+        MusicConditionEvaluator.CurrentContext context = MusicConditionEvaluator.getCurrentContext(player, mc.level,
+                mc.screen);
         List<MusicDefinition> definitions = Music_Player.soundPackManager.getActiveMusicDefinitionsSorted();
         MusicDefinition bestMatch = findBestMatch(definitions, context);
 
@@ -232,7 +245,8 @@ public class ClientMusicManager {
             if (shouldBePlaying && !isActuallyPlaying) {
                 playMusicByKey(currentMusicSoundEventKey); // playMusicByKey内でisRecordPlayingチェックあり
             } else if (!shouldBePlaying && isActuallyPlaying) {
-                LOGGER.warn("Music should NOT be playing, but instance for key [{}] is active. Stopping.", currentMusicSoundEventKey);
+                LOGGER.warn("Music should NOT be playing, but instance for key [{}] is active. Stopping.",
+                        currentMusicSoundEventKey);
                 stopMusic(true);
                 currentMusicSoundEventKey = null;
             }
@@ -260,16 +274,22 @@ public class ClientMusicManager {
             if (currentMusicInstance != null) {
                 Minecraft.getInstance().getSoundManager().stop(currentMusicInstance);
             }
-            currentMusicInstance = new SimpleSoundInstance(
+            // フェード設定を取得
+            int fadeInTicks = MusicPlayerClientConfig.INSTANCE.fadeInTicks.get();
+            int fadeOutTicks = MusicPlayerClientConfig.INSTANCE.fadeOutTicks.get();
+
+            MusicDefinition def = Music_Player.soundPackManager.getMusicDefinitionByEventKey(soundEventKey);
+            if (def != null) {
+                if (def.getFadeInTicks() != null)
+                    fadeInTicks = def.getFadeInTicks();
+                if (def.getFadeOutTicks() != null)
+                    fadeOutTicks = def.getFadeOutTicks();
+            }
+
+            currentMusicInstance = new FadingSoundInstance(
                     soundEventRl,
-                    SoundSource.MUSIC,
-                    1.0f, 1.0f, SoundInstance.createUnseededRandom(),
-                    true, // ループ再生
-                    0,    // 遅延なし
-                    SoundInstance.Attenuation.NONE,
-                    0.0D, 0.0D, 0.0D, // 相対位置ではないので絶対座標 (通常MUSICでは無視される)
-                    true  // グローバルサウンド (true にすることで Attenuation.NONE と合わせてどこでも聞こえる)
-            );
+                    fadeInTicks,
+                    fadeOutTicks);
             Minecraft.getInstance().getSoundManager().play(currentMusicInstance);
             LOGGER.info("Playing music with key: [{}], resolved to RL: [{}]", soundEventKey, soundEventRl);
 
@@ -288,7 +308,11 @@ public class ClientMusicManager {
         SoundManager soundManager = Minecraft.getInstance().getSoundManager();
         if (currentMusicInstance != null) {
             LOGGER.debug("Stopping music instance for key: {}", currentMusicSoundEventKey);
-            soundManager.stop(currentMusicInstance); // SoundManagerに停止を指示
+            if (currentMusicInstance instanceof FadingSoundInstance fadingInstance) {
+                fadingInstance.fadeOut();
+            } else {
+                soundManager.stop(currentMusicInstance); // SoundManagerに停止を指示
+            }
             currentMusicInstance = null; // インスタンスの参照をクリア
         }
         if (setStoppingFlag) {
@@ -297,7 +321,8 @@ public class ClientMusicManager {
     }
 
     @Nullable
-    private static MusicDefinition findBestMatch(List<MusicDefinition> definitions, MusicConditionEvaluator.CurrentContext context) {
+    private static MusicDefinition findBestMatch(List<MusicDefinition> definitions,
+            MusicConditionEvaluator.CurrentContext context) {
         for (MusicDefinition definition : definitions) {
             if (definition.isValid()) {
                 if (MusicConditionEvaluator.doesDefinitionMatch(definition, context)) {
